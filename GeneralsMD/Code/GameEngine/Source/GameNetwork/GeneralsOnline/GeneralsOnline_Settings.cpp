@@ -145,7 +145,7 @@ void GenOnlineSettings::Load(void)
 				if (cameraSettings.contains(SETTINGS_KEY_CAMERA_PITCH))
 				{
 					// GenTool-style camera pitch in degrees. 0 keeps the engine default.
-					m_Camera_Pitch = std::clamp<float>(static_cast<float>(cameraSettings[SETTINGS_KEY_CAMERA_PITCH]), 0.0f, 80.0f);
+					m_Camera_Pitch = std::clamp<float>(static_cast<float>(cameraSettings[SETTINGS_KEY_CAMERA_PITCH]), 0.0f, 90.0f);
 				}
 
 				if (cameraSettings.contains(SETTINGS_KEY_CAMERA_MAX_HEIGHT))
