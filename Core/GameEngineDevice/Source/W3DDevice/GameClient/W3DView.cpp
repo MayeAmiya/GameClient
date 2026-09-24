@@ -2244,6 +2244,13 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
 {
 	// MDC - we no longer want to rotate maps (design made all of them right to begin with)
 	//	m_defaultAngle = angle * M_PI/180.0f;
+#if defined(GENERALS_ONLINE)
+	// GenTool-style user camera pitch (degrees). 0 = engine default.
+	if (!bForceDefaultCam && NGMP_OnlineServicesManager::Settings.Camera_GetPitch() > 0.0f)
+	{
+		pitch = DEG_TO_RADF(NGMP_OnlineServicesManager::Settings.Camera_GetPitch());
+	}
+#endif
 	setDefaultPitch(pitch);
 
     // TODO_NGMP: Better way of doing this
@@ -2258,6 +2265,12 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
     {
         TheWritableGlobalData->m_minCameraHeight = NGMP_OnlineServicesManager::Settings.Camera_GetMinHeight();
         TheWritableGlobalData->m_maxCameraHeight = NGMP_OnlineServicesManager::Settings.DetermineCameraMaxHeight();
+
+        if (NGMP_OnlineServicesManager::Settings.Camera_GetMaxHeight() > 0.0f)
+        {
+            // GenTool-style user camera zoom-out height, replacing the engine/lobby default.
+            TheWritableGlobalData->m_maxCameraHeight = NGMP_OnlineServicesManager::Settings.Camera_GetMaxHeight();
+        }
     }
 
 #endif

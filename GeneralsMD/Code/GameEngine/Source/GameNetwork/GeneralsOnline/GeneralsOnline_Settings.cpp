@@ -7,6 +7,8 @@
 #define SETTINGS_KEY_CAMERA_MIN_HEIGHT "min_height"
 #define SETTINGS_KEY_CAMERA_MOVE_SPEED_RATIO "move_speed_ratio"
 #define SETTINGS_KEY_CAMERA_MAX_HEIGHT_WHEN_LOBBY_HOST "max_height_only_when_lobby_host"
+#define SETTINGS_KEY_CAMERA_PITCH "pitch"
+#define SETTINGS_KEY_CAMERA_MAX_HEIGHT "max_height"
 
 #define SETTINGS_KEY_RENDER "render"
 #define SETTINGS_KEY_RENDER_LIMIT_FRAMERATE "limit_framerate"
@@ -138,6 +140,18 @@ void GenOnlineSettings::Load(void)
 				if (cameraSettings.contains(SETTINGS_KEY_CAMERA_MAX_HEIGHT_WHEN_LOBBY_HOST))
 				{
 					m_Camera_MaxHeight_LobbyHost = std::clamp<float>(static_cast<float>(cameraSettings[SETTINGS_KEY_CAMERA_MAX_HEIGHT_WHEN_LOBBY_HOST]), GENERALS_ONLINE_MIN_LOBBY_CAMERA_ZOOM, GENERALS_ONLINE_MAX_LOBBY_CAMERA_ZOOM);
+				}
+
+				if (cameraSettings.contains(SETTINGS_KEY_CAMERA_PITCH))
+				{
+					// GenTool-style camera pitch in degrees. 0 keeps the engine default.
+					m_Camera_Pitch = std::clamp<float>(static_cast<float>(cameraSettings[SETTINGS_KEY_CAMERA_PITCH]), 0.0f, 80.0f);
+				}
+
+				if (cameraSettings.contains(SETTINGS_KEY_CAMERA_MAX_HEIGHT))
+				{
+					// GenTool-style camera zoom-out height. 0 keeps the engine default.
+					m_Camera_MaxHeight = std::max<float>(static_cast<float>(cameraSettings[SETTINGS_KEY_CAMERA_MAX_HEIGHT]), 0.0f);
 				}
 			}
 
@@ -312,6 +326,8 @@ void GenOnlineSettings::Save()
 					{SETTINGS_KEY_CAMERA_MIN_HEIGHT, m_Camera_MinHeight},
 					{SETTINGS_KEY_CAMERA_MAX_HEIGHT_WHEN_LOBBY_HOST, m_Camera_MaxHeight_LobbyHost},
 					{ SETTINGS_KEY_CAMERA_MOVE_SPEED_RATIO, m_Camera_MoveSpeedRatio },
+					{ SETTINGS_KEY_CAMERA_PITCH, m_Camera_Pitch },
+					{ SETTINGS_KEY_CAMERA_MAX_HEIGHT, m_Camera_MaxHeight },
 				}
 		  },
 

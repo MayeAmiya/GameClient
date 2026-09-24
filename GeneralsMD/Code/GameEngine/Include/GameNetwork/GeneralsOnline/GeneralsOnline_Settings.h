@@ -18,6 +18,8 @@ public:
 	float Camera_MoveSpeedRatio() const { return m_Camera_MoveSpeedRatio; }
 	float Camera_GetMinHeight() const { return m_Camera_MinHeight; }
 	float Camera_GetMaxHeight_WhenLobbyHost() const { return m_Camera_MaxHeight_LobbyHost; }
+	float Camera_GetPitch() const { return m_Camera_Pitch; }
+	float Camera_GetMaxHeight() const { return m_Camera_MaxHeight; }
 
 	float DetermineCameraMaxHeight();
 
@@ -121,6 +123,10 @@ private:
 	float m_Camera_MoveSpeedRatio = m_Camera_MoveSpeedRatio_default;
 
 	float m_Camera_MaxHeight_LobbyHost = GENERALS_ONLINE_DEFAULT_LOBBY_CAMERA_ZOOM;
+
+	// GenTool-style user camera overrides. 0 = keep the engine defaults.
+	float m_Camera_Pitch = 0.f;
+	float m_Camera_MaxHeight = 0.f;
 
 	bool m_bInitialized = false;
 
