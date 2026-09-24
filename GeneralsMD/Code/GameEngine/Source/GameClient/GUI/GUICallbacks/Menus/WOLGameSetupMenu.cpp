@@ -2146,30 +2146,8 @@ void WOLGameSetupMenuInit( WindowLayout *layout, void *userData )
 	TheWindowManager->winSetFocus(textEntryChat);
 
 #if defined(GENERALS_ONLINE)
-// NGMP: Did we just enter a lobby with modified camera height?
-	// if (pLobbyInterface->IsInLobby())
-	{
-		LobbyEntry& theLobby = pLobbyInterface->GetCurrentLobby();
-
-		if (theLobby.max_cam_height != GENERALS_ONLINE_DEFAULT_LOBBY_CAMERA_ZOOM)
-		{
-
-
-			if (!pLobbyInterface->IsHost())
-			{
-				UnicodeString strInform;
-				strInform.format(L"Camera height: The host set the limit to %lu.", theLobby.max_cam_height);
-				GadgetListBoxAddEntryText(listboxGameSetupChat, strInform, GameMakeColor(192, 192, 192, 255), -1, -1);
-			}
-			else
-			{
-				UnicodeString strInform;
-				strInform.format(L"Camera height: Your limit is %lu. Use /maxcameraheight <value> to change it. Default: 310.", theLobby.max_cam_height);
-				GadgetListBoxAddEntryText(listboxGameSetupChat, strInform, GameMakeColor(192, 192, 192, 255), -1, -1);
-			}
-
-		}
-	}
+// NGMP: Lobby camera limits were removed; the zoom ceiling now comes from the
+// player's own settings.json ("camera"."max_height") instead of the lobby host.
 
     if (pLobbyInterface != nullptr)
     {

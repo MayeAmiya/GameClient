@@ -2264,13 +2264,13 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
     else
     {
         TheWritableGlobalData->m_minCameraHeight = NGMP_OnlineServicesManager::Settings.Camera_GetMinHeight();
-        TheWritableGlobalData->m_maxCameraHeight = NGMP_OnlineServicesManager::Settings.DetermineCameraMaxHeight();
 
-        if (NGMP_OnlineServicesManager::Settings.Camera_GetMaxHeight() > 0.0f)
-        {
-            // GenTool-style user camera zoom-out height, replacing the engine/lobby default.
-            TheWritableGlobalData->m_maxCameraHeight = NGMP_OnlineServicesManager::Settings.Camera_GetMaxHeight();
-        }
+        // The lobby no longer dictates the zoom ceiling: the user's configured max height
+        // (GenTool-style, "camera"."max_height" in settings.json) or the GO default wins.
+        TheWritableGlobalData->m_maxCameraHeight =
+            NGMP_OnlineServicesManager::Settings.Camera_GetMaxHeight() > 0.0f
+                ? NGMP_OnlineServicesManager::Settings.Camera_GetMaxHeight()
+                : (float)GENERALS_ONLINE_DEFAULT_LOBBY_CAMERA_ZOOM;
     }
 
 #endif
