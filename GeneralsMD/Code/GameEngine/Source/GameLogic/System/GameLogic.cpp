@@ -2212,6 +2212,19 @@ void GameLogic::tryStartNewGame( Bool loadingSaveGame )
 	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_PRELOAD_ASSETS);
 
+	// TheSuperHackers @bugfix Apply the user's GenTool-style camera overrides
+	// ("camera"."pitch" / "camera"."max_height" in GeneralsOnlineData/settings.json)
+	// for every non-shell game start (skirmish, campaign, replay, save load, etc.),
+	// not only for online launches via NGMPGame::launchGame(). The shell map keeps
+	// the default camera (bForceDefaultCam = true).
+	if (!isInShellGame())
+	{
+		TheTacticalView->setDefaultView(
+			DEG_TO_RADF(TheGlobalData->m_cameraPitch),
+			DEG_TO_RADF(TheGlobalData->m_cameraYaw),
+			1.0f, false);
+	}
+
 	TheTacticalView->setAngleToDefault();
 	TheTacticalView->setPitchToDefault();
 	TheTacticalView->setZoomToDefault();
@@ -2259,6 +2272,18 @@ void GameLogic::tryStartNewGame( Bool loadingSaveGame )
 
 	// Set up the camera height based on the map height & globalData.
 	TheTacticalView->initHeightForMap();
+
+	// TheSuperHackers @bugfix Re-apply the user's camera overrides after the initial
+	// camera placement, mirroring the block above, so the final starting camera honors
+	// "camera"."pitch" / "camera"."max_height" from GeneralsOnlineData/settings.json.
+	if (!isInShellGame())
+	{
+		TheTacticalView->setDefaultView(
+			DEG_TO_RADF(TheGlobalData->m_cameraPitch),
+			DEG_TO_RADF(TheGlobalData->m_cameraYaw),
+			1.0f, false);
+	}
+
 	TheTacticalView->setAngleToDefault();
 	TheTacticalView->setPitchToDefault();
 	TheTacticalView->setZoomToDefault();

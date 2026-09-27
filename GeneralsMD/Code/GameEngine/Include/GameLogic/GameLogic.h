@@ -358,6 +358,7 @@ private:
 	bool onQueueUnitCreate(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
 	bool onCancelUnitCreate(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
 	bool onDozerConstruct(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
+	bool onDozerWaypointBuild(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
 	bool onDozerCancelConstruct(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
 	bool onSell(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
 	bool onToggleOvercharge(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
@@ -372,6 +373,7 @@ private:
 	bool onPlaceBeacon(GameMessage *msg);
 	bool onRemoveBeacon(GameMessage *msg);
 	bool onSetBeaconText(GameMessage *msg, AIGroupPtr &currentlySelectedGroup);
+	bool onSetDragSelectFilter(GameMessage *msg);		///< TheSuperHackers @feature apply the synced drag-select economy filter state
 	bool onSelfDestruct(GameMessage *msg);
 	bool onSetReplayCamera(GameMessage *msg);
 	bool onCreateTeam(GameMessage *msg);
