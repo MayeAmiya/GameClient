@@ -478,6 +478,10 @@ void GameClient::reset()
 	}
 	m_drawableList = nullptr;
 
+	// TheSuperHackers @bugfix The purge above also destroyed the ghost build preview drawables;
+	// InGameUI must forget those pointers now, or the next update pass would destroy them twice.
+	TheInGameUI->onClientDrawablesPurged();
+
 	TheDisplay->reset();
 	TheTerrainVisual->reset();
 	TheRayEffects->reset();

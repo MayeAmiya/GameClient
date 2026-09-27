@@ -1673,6 +1673,26 @@ void InGameUI::handleBuildPlacements()
 	//
 	if (m_pendingPlaceType)
 	{
+		// TheSuperHackers @bugfix Sticky placement keeps a building picked until the player
+		// cancels it, so this state can now survive into situations the old "place and forget"
+		// flow never reached (the builder dying, the game ending, the shell coming up). Bail out
+		// of placement mode as soon as anything it depends on is gone, otherwise we keep drawing
+		// and validating against a destroyed builder / destroyed ghost model.
+		Bool placementIsStillValid = TRUE;
+		if( m_placeIcon == nullptr || m_placeIcon[ 0 ] == nullptr )
+			placementIsStillValid = FALSE;
+		else if( TheGameLogic && TheGameLogic->isInShellGame() )
+			placementIsStillValid = FALSE;
+		else if( m_pendingPlaceSourceObjectID != INVALID_ID &&
+						 ( TheGameLogic == nullptr || TheGameLogic->findObjectByID( m_pendingPlaceSourceObjectID ) == nullptr ) )
+			placementIsStillValid = FALSE;
+
+		if( placementIsStillValid == FALSE )
+		{
+			placeBuildAvailable( nullptr, nullptr );
+			return;
+		}
+
 		ICoord2D loc;
 		Coord3D world;
 		Real angle = m_placeIcon[0]->getOrientation();
@@ -1886,10 +1906,165 @@ void InGameUI::preDraw()
 /** Update the in game user interface */
 //-------------------------------------------------------------------------------------------------
 //DECLARE_PERF_TIMER(InGameUI_update)
+// ============================================================================
+// TheSuperHackers @feature Ghost build previews for waypoint build orders
+// ============================================================================
+// A queued waypoint build order is only an *intent*: no foundation exists and no money has
+// been spent until the order fires. To make that visible we keep a translucent copy of the
+// building at the recorded site and angle — the same mechanism as the build-placement cursor
+// preview (m_placeIcon): a Drawable with no Object behind it.
+//
+// These are managed HERE, in InGameUI::update(), and NOT from the render walk: destroying a
+// drawable while the renderer is walking the drawable list crashes the game (that is exactly
+// what happened when they were managed from W3DWaypointBuffer::drawWaypoints).
+// Once created they render automatically as ordinary drawables.
+// ============================================================================
+
+#include "GameLogic/GameLogic.h"			// TheSuperHackers @feature TheGameLogic
+#include "GameLogic/Module/DozerAIUpdate.h"	// TheSuperHackers @feature DozerAIInterface (queued ghost orders)
+
+enum { MAX_GHOST_BUILD_PREVIEWS_IGUI = 64 };
+
+static Drawable *s_ghostPreviewDrawables[ MAX_GHOST_BUILD_PREVIEWS_IGUI ] = { nullptr };
+static const ThingTemplate *s_ghostPreviewTemplates[ MAX_GHOST_BUILD_PREVIEWS_IGUI ] = { nullptr };
+
+// Ghost drawables are destroyed one frame after they stop being needed — never from inside
+// a drawable walk, and never while the renderer is drawing.
+static Drawable *s_ghostsPendingDestroy[ MAX_GHOST_BUILD_PREVIEWS_IGUI * 2 ] = { nullptr };
+static Int s_ghostsPendingDestroyCount = 0;
+
+static void destroyGhostDeferred( Drawable *ghost )
+{
+	if( ghost != nullptr && s_ghostsPendingDestroyCount < MAX_GHOST_BUILD_PREVIEWS_IGUI * 2 )
+		s_ghostsPendingDestroy[ s_ghostsPendingDestroyCount++ ] = ghost;
+}
+
+static void updateGhostBuildPreviews( Player *localPlayer )
+{
+	Int used = 0;
+
+	// Safe point to destroy: this runs from InGameUI::update(), not from the render walk.
+	for( Int i = 0; i < s_ghostsPendingDestroyCount; i++ )
+	{
+		if( s_ghostsPendingDestroy[ i ] != nullptr )
+			TheGameClient->destroyDrawable( s_ghostsPendingDestroy[ i ] );
+		s_ghostsPendingDestroy[ i ] = nullptr;
+	}
+	s_ghostsPendingDestroyCount = 0;
+
+	if( localPlayer != nullptr )
+	{
+		for( Drawable *draw = TheGameClient->firstDrawable();
+				 draw != nullptr && used < MAX_GHOST_BUILD_PREVIEWS_IGUI;
+				 draw = draw->getNextDrawable() )
+		{
+			Object *obj = draw->getObject();
+			if( obj == nullptr )
+				continue;
+
+			// Only preview orders belonging to ourselves or to an ally.
+			Bool previewVisible = ( obj->getControllingPlayer() == localPlayer );
+			if( !previewVisible && obj->getTeam() != nullptr &&
+					localPlayer->getRelationship( obj->getTeam() ) == ALLIES )
+			{
+				previewVisible = TRUE;
+			}
+			if( !previewVisible )
+				continue;
+
+			// Same rule as the routes: hidden builder means hidden intentions.
+			if( draw->getFullyObscuredByShroud() )
+				continue;
+
+			AIUpdateInterface *ai = obj->getAIUpdateInterface();
+			if( ai == nullptr )
+				continue;
+
+			DozerAIInterface *dozer = ai->getDozerAIInterface();
+			if( dozer == nullptr )
+				continue;
+
+			const Int queued = dozer->getQueuedBuildCount();
+			for( Int q = 0; q < queued && used < MAX_GHOST_BUILD_PREVIEWS_IGUI; q++ )
+			{
+				const ThingTemplate *tmpl = dozer->getQueuedBuildTemplate( q );
+				const Coord3D *pos = dozer->getQueuedBuildPosition( q );
+				if( tmpl == nullptr || pos == nullptr )
+					continue;
+
+				Drawable *ghost = s_ghostPreviewDrawables[ used ];
+
+				// Only rebuild when the template changed; position/angle/colour are cheap to
+				// refresh on the existing drawable every frame.
+				if( ghost != nullptr && s_ghostPreviewTemplates[ used ] != tmpl )
+				{
+					destroyGhostDeferred( ghost );
+					ghost = nullptr;
+				}
+
+				if( ghost == nullptr )
+				{
+					UnsignedInt drawableStatus = DRAWABLE_STATUS_NO_STATE_PARTICLES;
+					drawableStatus |= TheGlobalData->m_objectPlacementShadows ? DRAWABLE_STATUS_SHADOWS : 0;
+					ghost = TheThingFactory->newDrawable( tmpl, drawableStatus );
+					s_ghostPreviewDrawables[ used ] = ghost;
+					s_ghostPreviewTemplates[ used ] = tmpl;
+				}
+
+				if( ghost == nullptr )
+					continue;
+
+				ghost->setPosition( pos );
+				ghost->setDrawableOpacity( TheGlobalData->m_objectPlacementOpacity );
+				ghost->setOrientation( dozer->getQueuedBuildAngle( q ) );
+
+				// House colour of whoever queued the order. Must be setIndicatorColor():
+				// colorTint() is only a colour flash and never touches the house-colour parts.
+				ghost->setIndicatorColor( obj->getControllingPlayer()->getPlayerColor() );
+
+				used++;
+			}
+		}
+	}
+
+	// Release previews left over from orders that have since been built or cancelled.
+	for( Int i = used; i < MAX_GHOST_BUILD_PREVIEWS_IGUI; i++ )
+	{
+		if( s_ghostPreviewDrawables[ i ] != nullptr )
+		{
+			destroyGhostDeferred( s_ghostPreviewDrawables[ i ] );
+			s_ghostPreviewDrawables[ i ] = nullptr;
+			s_ghostPreviewTemplates[ i ] = nullptr;
+		}
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @bugfix Called by GameClient::reset() AFTER it has purged every drawable.
+	* The ghost preview drawables died in that purge, so the static slots here must be cleared
+	* WITHOUT destroying anything again. Forgetting this left dangling pointers behind and the
+	* next updateGhostBuildPreviews() call destroyed freed memory at the score screen. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::onClientDrawablesPurged()
+{
+	for( Int i = 0; i < MAX_GHOST_BUILD_PREVIEWS_IGUI; i++ )
+	{
+		s_ghostPreviewDrawables[ i ] = nullptr;
+		s_ghostPreviewTemplates[ i ] = nullptr;
+	}
+
+	for( Int i = 0; i < s_ghostsPendingDestroyCount; i++ )
+		s_ghostsPendingDestroy[ i ] = nullptr;
+	s_ghostsPendingDestroyCount = 0;
+}
+
 void InGameUI::update()
 {
 	//USE_PERF_TIMER(InGameUI_update)
 	Int i;
+
+	// TheSuperHackers @feature manage the ghost build previews here, outside the render walk.
+	updateGhostBuildPreviews( ThePlayerList->getLocalPlayer() );
 
 	/// @todo make sure this code gets called even when the UI is not being drawn
 	if (m_videoStream && m_videoBuffer)

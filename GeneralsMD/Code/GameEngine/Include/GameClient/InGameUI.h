@@ -446,6 +446,10 @@ public:  // ********************************************************************
 
 	// build interface
 	virtual void placeBuildAvailable(const ThingTemplate* build, Drawable* buildDrawable);				///< built thing being placed
+
+	// TheSuperHackers @bugfix GameClient::reset() purges every drawable; the ghost build preview
+	// slots must forget their (now destroyed) drawables without destroying them a second time.
+	virtual void onClientDrawablesPurged();
 	virtual const ThingTemplate* getPendingPlaceType();					///< get item we're trying to place
 	virtual ObjectID getPendingPlaceSourceObjectID();			///< get producing object
 	virtual Bool getPreventLeftClickDeselectionInAlternateMouseModeForOneClick() const { return m_preventLeftClickDeselectionInAlternateMouseModeForOneClick; }
