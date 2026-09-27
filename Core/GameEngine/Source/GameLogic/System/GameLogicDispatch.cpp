@@ -683,6 +683,11 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 			onDozerConstruct(msg, currentlySelectedGroup);
 			break;
 		}
+		case GameMessage::MSG_DOZER_WAYPOINT_BUILD:
+		{
+			onDozerWaypointBuild(msg, currentlySelectedGroup);
+			break;
+		}
 		case GameMessage::MSG_DOZER_CANCEL_CONSTRUCT:
 		{
 			onDozerCancelConstruct(msg, currentlySelectedGroup);
@@ -751,6 +756,14 @@ void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )
 		case GameMessage::MSG_SET_BEACON_TEXT:
 		{
 			onSetBeaconText(msg, currentlySelectedGroup);
+			break;
+		}
+		case GameMessage::MSG_SET_DRAG_SELECT_FILTER:
+		{
+			// TheSuperHackers @feature apply the synced drag-select economy filter state.
+			// Runs in lockstep on every machine so each client erases the same units
+			// when re-processing the (region-synced) drag selection of another player.
+			onSetDragSelectFilter(msg);
 			break;
 		}
 		case GameMessage::MSG_SELF_DESTRUCT:
@@ -1809,20 +1822,69 @@ bool GameLogic::onCancelUpgrade(MAYBE_UNUSED GameMessage *msg, AIGroupPtr &curre
 
 bool GameLogic::onQueueUnitCreate(MAYBE_UNUSED GameMessage *msg, AIGroupPtr &currentlySelectedGroup)
 {
-#if RETAIL_COMPATIBLE_AIGROUP
-	Object *producer = getSingleObjectFromSelection(currentlySelectedGroup);
-#else
-	Object *producer = getSingleObjectFromSelection(currentlySelectedGroup.Peek());
-#endif
 	const ThingTemplate *whatToCreate;
 	ProductionID productionID;
+	Player *msgPlayer = getMessagePlayer(msg);
 
 	// get data from the message
 	whatToCreate = TheThingFactory->findByTemplateID( msg->getArgument( 0 )->integer );
 	productionID = (ProductionID)msg->getArgument( 1 )->integer;
 
 	// sanity
-	if ( producer == nullptr || whatToCreate == nullptr )
+	if ( whatToCreate == nullptr )
+		return false;
+
+	// TheSuperHackers @feature Queue distribution across selected production buildings: when
+	// several producers are selected, every queued unit goes to the building with the FEWEST
+	// pending production entries; ties break by the lowest object ID, which acts as a stable
+	// "slot number" (buildings keep their relative order because object ids never change).
+	// Buildings that cannot accept the request right now are skipped entirely:
+	//   - production queue full            (CANMAKE_QUEUE_FULL)
+	//   - parking places full / airfield full (CANMAKE_PARKING_PLACES_FULL)
+	//   - unit maxed out for the player    (CANMAKE_MAXED_OUT_FOR_PLAYER)
+	// CANMAKE_NO_MONEY is deliberately accepted, vanilla queues the order and pays when
+	// construction starts. Every input here (queue counts, object ids, money, parking state)
+	// is simulated state, so all clients choose the same building and lockstep stays intact.
+	Object *producer = nullptr;
+	Int bestCount = 0;
+
+	if( currentlySelectedGroup && !currentlySelectedGroup->isEmpty() && msgPlayer != nullptr )
+	{
+		const VecObjectID &selectedIDs = currentlySelectedGroup->getAllIDs();
+		for( VecObjectID::const_iterator idIt = selectedIDs.begin(); idIt != selectedIDs.end(); ++idIt )
+		{
+			Object *candidate = TheGameLogic->findObjectByID( *idIt );
+			if( candidate == nullptr || candidate->getControllingPlayer() != msgPlayer )
+				continue;
+
+			ProductionUpdateInterface *candidatePU = candidate->getProductionUpdateInterface();
+			if( candidatePU == nullptr )
+				continue;
+
+			if( !TheBuildAssistant->isPossibleToMakeUnit( candidate, whatToCreate ) )
+				continue;
+
+			CanMakeType candidateCmt = TheBuildAssistant->canMakeUnit( candidate, whatToCreate );
+			if( candidateCmt != CANMAKE_OK && candidateCmt != CANMAKE_NO_MONEY )
+				continue;
+
+			Int candidateCount = (Int)candidatePU->getProductionCount();
+			if( producer == nullptr || candidateCount < bestCount ||
+					( candidateCount == bestCount && candidate->getID() < producer->getID() ) )
+			{
+				producer = candidate;
+				bestCount = candidateCount;
+			}
+		}
+	}
+
+	// TheSuperHackers @bugfix No fallback here on purpose: when every selected producer fails
+	// the filters above (queue full / parking places full / maxed out), the request must be
+	// rejected instead of falling back to the vanilla "first selected" producer, which would
+	// queue units into a full airfield. The single-selection case is covered by the loop
+	// (the selected building is a candidate like any other); its capacity was already gated
+	// by the client pre-check, and rejecting here keeps all machines consistent in lockstep.
+	if( producer == nullptr )
 		return false;
 
 	// get the production interface for the producer
@@ -1835,6 +1897,23 @@ bool GameLogic::onQueueUnitCreate(MAYBE_UNUSED GameMessage *msg, AIGroupPtr &cur
 	}
 
 	// queue the build
+	// TheSuperHackers @bugfix The client mints production ids from the first selected
+	// producer's counter, but a distributed unit may land in a DIFFERENT building whose queue
+	// can already hold an entry with that same id (ambiguous cancel mapping). If the id is
+	// taken, re-mint one from the chosen building's own counter. Queue state is simulated, so
+	// every machine makes the same decision and lockstep stays intact.
+	Bool productionIDInUse = FALSE;
+	for( const ProductionEntry *entry = pu->firstProduction(); entry; entry = pu->nextProduction( entry ) )
+	{
+		if( entry->getProductionID() == productionID )
+		{
+			productionIDInUse = TRUE;
+			break;
+		}
+	}
+	if( productionIDInUse )
+		productionID = pu->requestUniqueUnitID();
+
 	pu->queueCreateUnit( whatToCreate, productionID );
 
 	return true;
@@ -1914,6 +1993,38 @@ bool GameLogic::onDozerConstruct(MAYBE_UNUSED GameMessage *msg, AIGroupPtr &curr
 
 	// no, this is bad, don't do here, do when POSTING message
 	//		pickAndPlayUnitVoiceResponse( TheInGameUI->getAllSelectedDrawables(), msg->getType() );
+
+	return true;
+}
+
+bool GameLogic::onDozerWaypointBuild(MAYBE_UNUSED GameMessage *msg, AIGroupPtr &currentlySelectedGroup)
+{
+	const ThingTemplate *place;
+	Coord3D loc;
+	Real angle;
+
+	// get player, what to place, and location
+#if RETAIL_COMPATIBLE_AIGROUP
+	Object *constructorObject = getSingleObjectFromSelection(currentlySelectedGroup);
+#else
+	Object *constructorObject = getSingleObjectFromSelection(currentlySelectedGroup.Peek());
+#endif
+	place = TheThingFactory->findByTemplateID( msg->getArgument( 0 )->integer );
+	loc = msg->getArgument( 1 )->location;
+	angle = msg->getArgument( 2 )->real;
+
+	Player *msgPlayer = getMessagePlayer(msg);
+	if( place == nullptr || constructorObject == nullptr || msgPlayer == nullptr )
+		return false;  //These are not crashes, as the object may have died before this message came in
+
+	// the player sending this message must actually control the builder
+	if( constructorObject->getControllingPlayer() != msgPlayer )
+		return false;
+
+	// queue the construction on the builder; the foundation is created immediately (money is
+	// spent now) but the builder will only go construct it once it is idle and no longer moving,
+	// allowing waypoint-style multi-building orders.
+	TheBuildAssistant->buildObjectQueued( constructorObject, place, &loc, angle, msgPlayer );
 
 	return true;
 }
@@ -2249,6 +2360,31 @@ bool GameLogic::onSetBeaconText(MAYBE_UNUSED GameMessage *msg, AIGroupPtr &curre
 						beaconDrawable->setCaptionText(s);
 				}
 			}
+		}
+	}
+
+	return true;
+}
+
+bool GameLogic::onSetDragSelectFilter(GameMessage *msg)
+{
+	// TheSuperHackers @feature apply the synced per-player drag-select economy filter.
+	// This dispatch runs in lockstep on every machine, so the flag (stored per Player)
+	// stays consistent across all clients; each machine therefore erases the same units
+	// when re-deriving another player's drag selection from the synced selection region.
+	// Only the toggling player's own state changes - other players are unaffected.
+	Player *msgPlayer = getMessagePlayer(msg);
+	if (msgPlayer)
+	{
+		msgPlayer->setDragSelectEconomyFilter(msg->getArgument(0)->boolean);
+
+		if (msgPlayer == ThePlayerList->getLocalPlayer() && TheInGameUI)
+		{
+			// TheSuperHackers @tweaked short hint, no key binding mentioned
+			TheInGameUI->message(
+				msgPlayer->isDragSelectEconomyFilterEnabled()
+					? UnicodeString(L"Drag select: economy units excluded")
+					: UnicodeString(L"Drag select: economy units included"));
 		}
 	}
 

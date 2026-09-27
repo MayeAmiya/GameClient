@@ -113,6 +113,14 @@ void ControlBar::addCommonCommands( Drawable *draw, Bool firstDrawable )
 	if( firstDrawable == TRUE )
 	{
 
+		// TheSuperHackers @feature Structures participate in multi select: when several
+		// production buildings are box selected, their UNIT_BUILD / PLAYER_UPGRADE buttons stay
+		// on the command bar even though they are not flagged OK_FOR_MULTI_SELECT, so the queue
+		// can be distributed across all of them (see GameLogic::onQueueUnitCreate). Buttons of
+		// buildings that share the same command set are identical pointers, so the intersect
+		// pass below keeps them only while every selected structure belongs to that set.
+		Bool isStructure = obj->isKindOf( KINDOF_STRUCTURE );
+
 		// just add each command that is classified as a common command
 		for( i = 0; i < MAX_COMMANDS_PER_SET; i++ )
 		{
@@ -123,7 +131,11 @@ void ControlBar::addCommonCommands( Drawable *draw, Bool firstDrawable )
 			command = commandSet->getCommandButton(i);
 
 			// add if present and can be used in a multi select
-			if( command && BitIsSet( command->getOptions(), OK_FOR_MULTI_SELECT ) == TRUE )
+			Bool productionCommand = isStructure && command &&
+				( command->getCommandType() == GUI_COMMAND_UNIT_BUILD ||
+					command->getCommandType() == GUI_COMMAND_PLAYER_UPGRADE );
+
+			if( command && ( BitIsSet( command->getOptions(), OK_FOR_MULTI_SELECT ) == TRUE || productionCommand ) )
 			{
 
 				// put it in the common command set

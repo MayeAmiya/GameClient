@@ -38,6 +38,7 @@
 #include "Common/Science.h"
 #include "Common/SpecialPower.h"
 #include "Common/ThingTemplate.h"
+#include "GameClient/Keyboard.h"	// TheSuperHackers @feature TheKeyboard->isShift, for shift-click to queue five units
 #include "Common/Upgrade.h"
 #include "Common/PlayerTemplate.h"
 
@@ -386,14 +387,94 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 		{
 			const ThingTemplate *whatToBuild = commandButton->getThingTemplate();
 
+			// sanity, we must have something to build
+			DEBUG_ASSERTCRASH( whatToBuild, ("Undefined BUILD command for object '%s'",
+											 commandButton->getThingTemplate()->getName().str()) );
+
+			// TheSuperHackers @feature Queue distribution across selected production buildings:
+			// when MORE THAN ONE of the selected objects can produce this template, the request
+			// bypasses the vanilla single-factory pre-checks below and the simulation assigns
+			// every single unit to the building with the fewest pending entries
+			// (see GameLogic::onQueueUnitCreate). One full airfield must not block the others.
+			Bool distributeAcrossProducers = FALSE;
+			const DrawableList *selectedDrawables = TheInGameUI ? TheInGameUI->getAllSelectedDrawables() : nullptr;
+			if( selectedDrawables != nullptr )
+			{
+				Int producerCount = 0;
+				for( DrawableList::const_iterator selectIt = selectedDrawables->begin();
+						 selectIt != selectedDrawables->end() && producerCount < 2; ++selectIt )
+				{
+					Object *producerObj = (*selectIt) ? (*selectIt)->getObject() : nullptr;
+					if( producerObj == nullptr || !producerObj->isLocallyControlled() )
+						continue;
+					if( producerObj->getProductionUpdateInterface() == nullptr )
+						continue;
+					if( !TheBuildAssistant->isPossibleToMakeUnit( producerObj, whatToBuild ) )
+						continue;
+					++producerCount;
+				}
+				distributeAcrossProducers = ( producerCount > 1 );
+			}
+
+			// TheSuperHackers @bugfix a single click arrives here TWICE: both the main
+			// ControlBar callback and the GeneralsExpPoints callback fall through to
+			// processCommandUI for the same button. Queueing is not idempotent, so the
+			// duplicate doubled every batch (1 + 5 = 6). A logic-frame debounce was not
+			// enough (the two calls can straddle a frame boundary), so this uses real
+			// time: two identical requests within 100ms are one click. Human double
+			// clicks are slower than that, the callback pair is not.
+			static UnsignedInt lastQueueMs = 0xFFFFFFFF;
+			static const ThingTemplate *lastQueueTemplate = nullptr;
+			UnsignedInt nowMs = GetTickCount();
+			Bool duplicateRequest = ( lastQueueTemplate == whatToBuild && nowMs - lastQueueMs < 100 );
+			lastQueueTemplate = whatToBuild;
+			lastQueueMs = nowMs;
+			if( duplicateRequest )
+				break;
+
+			// TheSuperHackers @feature Shift-click queues FIVE of this unit at once. One
+			// message per unit, so the money / queue / parking-place checks still apply to
+			// every single unit and the queue UI counts them individually (and stacks them
+			// visually). A normal click stays exactly one unit.
+			// With distribution enabled the five requests are spread across ALL selected
+			// production buildings by the simulation, never piled onto a single one.
+			Int unitsToQueue = TheKeyboard->isShift() ? 5 : 1;
+
+			if( distributeAcrossProducers )
+			{
+				// production ids come from the first selected producer's counter; ids only
+				// need to be unique per building for the cancel mapping to work.
+				ProductionUpdateInterface *idSourcePU = nullptr;
+				if( selectedDrawables != nullptr )
+				{
+					for( DrawableList::const_iterator selectIt = selectedDrawables->begin();
+							 selectIt != selectedDrawables->end() && idSourcePU == nullptr; ++selectIt )
+					{
+						Object *producerObj = (*selectIt) ? (*selectIt)->getObject() : nullptr;
+						if( producerObj == nullptr || !producerObj->isLocallyControlled() )
+							continue;
+						idSourcePU = producerObj->getProductionUpdateInterface();
+					}
+				}
+				if( idSourcePU == nullptr )
+					break;
+
+				for( Int unitIndex = 0; unitIndex < unitsToQueue; ++unitIndex )
+				{
+					ProductionID productionID = idSourcePU->requestUniqueUnitID();
+
+					GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_QUEUE_UNIT_CREATE );
+					msg->appendIntegerArgument( whatToBuild->getTemplateID() );
+					msg->appendIntegerArgument( productionID );
+				}
+
+				break;
+			}
+
 			// get the "factory" object that is going to make the thing
 			Object *factory = obj;
 			if( factory == nullptr )
 				break;
-
-			// sanity, we must have something to build
-			DEBUG_ASSERTCRASH( whatToBuild, ("Undefined BUILD command for object '%s'",
-												 commandButton->getThingTemplate()->getName().str()) );
 
 			CanMakeType cmt = TheBuildAssistant->canMakeUnit(factory, whatToBuild);
 
@@ -440,14 +521,22 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 
 			}
 
-			// get a new production id to assign to this
-			ProductionID productionID = pu->requestUniqueUnitID();
+			for( Int unitIndex = 0; unitIndex < unitsToQueue; ++unitIndex )
+			{
+				// re-check for every unit: money, queue space and parking places can run
+				// out in the middle of the batch - just stop there, what got queued stays.
+				if( TheBuildAssistant->canMakeUnit( factory, whatToBuild ) != CANMAKE_OK )
+					break;
 
-			// create a message to build this thing
+				// get a new production id to assign to this
+				ProductionID productionID = pu->requestUniqueUnitID();
 
-			GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_QUEUE_UNIT_CREATE );
-			msg->appendIntegerArgument( whatToBuild->getTemplateID() );
-			msg->appendIntegerArgument( productionID );
+				// create a message to build this thing
+
+				GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_QUEUE_UNIT_CREATE );
+				msg->appendIntegerArgument( whatToBuild->getTemplateID() );
+				msg->appendIntegerArgument( productionID );
+			}
 
 			break;
 
@@ -488,9 +577,54 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 			if( !producer->isLocallyControlled() )
 				break;
 
-			// send a message to cancel that particular production entry
-			GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_CANCEL_UNIT_CREATE );
-			msg->appendIntegerArgument( productionIDToCancel );
+			// TheSuperHackers @feature how much of this stack gets cancelled depends on the click:
+			//   plain click          -> cancel the LAST queued unit of the stack. The unit currently
+			//                           under construction (the stack head) is never touched first,
+			//                           so its progress bar keeps running.
+			//   shift + left click   -> cancel up to FIVE units from the tail of the stack
+			//   shift + right click  -> cancel the WHOLE stack
+			// Everything goes through individual MSG_CANCEL_UNIT_CREATE messages so every refund
+			// is processed by the simulation separately and online play stays in sync.
+			ProductionUpdateInterface *cancelPui = producer->getProductionUpdateInterface();
+
+			// find the entry this button represents (the head of the stack run) ...
+			const ProductionEntry *entry = cancelPui->firstProduction();
+			while( entry != nullptr && entry->getProductionID() != productionIDToCancel )
+				entry = cancelPui->nextProduction( entry );
+
+			if( entry != nullptr )
+			{
+				const ThingTemplate *stackType = entry->getProductionObject();
+
+				// ... collect the whole run of consecutive identical units behind it
+				ProductionID stackIds[ 64 ];
+				Int stackSize = 0;
+				const ProductionEntry *run = entry;
+				while( run != nullptr &&
+							 run->getProductionType() == PRODUCTION_UNIT &&
+							 run->getProductionObject()->isEquivalentTo( stackType ) &&
+							 stackSize < 50 )	// one button covers at most 50 entries — never cancel into the next stack
+				{
+					stackIds[ stackSize++ ] = run->getProductionID();
+					run = cancelPui->nextProduction( run );
+				}
+
+				// how many to cancel: 1, up to 5, or the whole stack
+				Int cancelCount = 1;
+				if( TheKeyboard->isShift() )
+					cancelCount = ( gadgetMessage == GBM_SELECTED_RIGHT ) ? stackSize : 5;
+				if( cancelCount > stackSize )
+					cancelCount = stackSize;
+
+				// cancel from the TAIL of the stack backwards, so the entry currently under
+				// construction (the head) is the very last one to go and its progress is
+				// preserved for as long as possible
+				for( Int c = 0; c < cancelCount; ++c )
+				{
+					GameMessage *stackCancelMsg = TheMessageStream->appendMessage( GameMessage::MSG_CANCEL_UNIT_CREATE );
+					stackCancelMsg->appendIntegerArgument( stackIds[ stackSize - 1 - c ] );
+				}
+			}
 
 			break;
 
