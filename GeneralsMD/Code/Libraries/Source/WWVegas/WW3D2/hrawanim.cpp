@@ -549,7 +549,7 @@ void HRawAnimClass::Get_Orientation(Quaternion& q, int pividx,float frame) const
 	}
 	else
 	{
-		Fast_Slerp(q, q0, q1, ratio);
+		Slerp(q, q0, q1, ratio);
 	}
 
 #else
@@ -572,7 +572,7 @@ void HRawAnimClass::Get_Orientation(Quaternion& q, int pividx,float frame) const
 		q1.Set(vals[0],vals[1],vals[2],vals[3]);
 	}
 
-	Fast_Slerp(q, q0, q1, ratio );
+	Slerp(q, q0, q1, ratio );
 #endif
 }
 
@@ -630,7 +630,7 @@ void HRawAnimClass::Get_Transform(Matrix3D& mtx, int pividx, float frame ) const
 	}
 
 	Quaternion q;
-	Fast_Slerp(q, q0, q1, ratio );
+	Slerp(q, q0, q1, ratio );
 	::Build_Matrix3D(q,mtx);
 
 	Vector3 trans0(0.0f,0.0f,0.0f);

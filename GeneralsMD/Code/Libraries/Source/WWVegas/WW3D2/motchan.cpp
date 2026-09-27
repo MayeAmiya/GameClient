@@ -418,6 +418,9 @@ bool TimeCodedMotionChannelClass::Load_W3D(ChunkLoadClass & cload)
  *=============================================================================================*/
 void	TimeCodedMotionChannelClass::Get_Vector(float32 frame,float * setvec)
 {
+	// TheSuperHackers @bugfix 2026-09 - Guard against negative frames: the float->uint32
+	// conversion below is undefined behaviour for negative inputs and produced a huge index.
+	if (frame < 0.0f) frame = 0.0f;
 
   uint32	tc0;
 
@@ -474,6 +477,9 @@ Quaternion TimeCodedMotionChannelClass::Get_QuatVector(float32 frame)
 {
 
 	assert(VectorLen == 4);
+
+	// TheSuperHackers @bugfix 2026-09 - Guard against negative frames, see Get_Vector.
+	if (frame < 0.0f) frame = 0.0f;
 
 	Quaternion q(1);
 
@@ -904,7 +910,7 @@ void AdaptiveDeltaMotionChannelClass::Free()
 	delete[] Data;
 	Data = nullptr;
 
-	delete CacheData;
+	delete[] CacheData;	// TheSuperHackers @bugfix 2026-09 - CacheData is allocated with array new (float[VectorLen*2]) in Load_W3D, it must be freed with array delete.
 	CacheData = nullptr;
 }
 
@@ -1184,7 +1190,13 @@ float AdaptiveDeltaMotionChannelClass::getframe(uint32 frame_idx, uint32 vector_
 
    memcpy(&temp[0], &CacheData[VectorLen], VectorLen * sizeof(float));
 
-   decompress(CacheFrame, &temp[0], frame_idx, &CacheData[0]);
+   // TheSuperHackers @bugfix 2026-09 - The seed in temp[] holds the value of frame CacheFrame+1
+   // (CacheData[VectorLen..]), but the call below claimed it was the value of frame CacheFrame.
+   // decompress() then applied the delta of frame CacheFrame+1 a second time, injecting one extra
+   // delta step into the result on every use of this branch (any forward jump larger than two
+   // frames). The channel cache is shared by every model playing this animation, so the drift
+   // accumulated over the whole session. Pass the correct source index for the seed.
+   decompress(CacheFrame + 1, &temp[0], frame_idx, &CacheData[0]);
    CacheFrame = frame_idx;
 
    if (frame_idx != (NumFrames - 1))  {
@@ -1209,6 +1221,9 @@ float AdaptiveDeltaMotionChannelClass::getframe(uint32 frame_idx, uint32 vector_
  *=============================================================================================*/
 void	AdaptiveDeltaMotionChannelClass::Get_Vector(float32 frame,float * setvec)
 {
+	// TheSuperHackers @bugfix 2026-09 - Guard against negative frames: the float->uint32
+	// conversion below is undefined behaviour for negative inputs and produced a huge index.
+	if (frame < 0.0f) frame = 0.0f;
 
 	uint32 frame1 = frame;
 
@@ -1228,6 +1243,8 @@ void	AdaptiveDeltaMotionChannelClass::Get_Vector(float32 frame,float * setvec)
 //
 Quaternion AdaptiveDeltaMotionChannelClass::Get_QuatVector(float32 frame)
 {
+	// TheSuperHackers @bugfix 2026-09 - Guard against negative frames, see Get_Vector.
+	if (frame < 0.0f) frame = 0.0f;
 
 	uint32 frame1 = frame;
 	uint32 frame2 = frame1+1;

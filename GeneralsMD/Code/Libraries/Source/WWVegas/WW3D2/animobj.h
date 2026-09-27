@@ -41,6 +41,7 @@
 #pragma once
 
 #include "WWLib/always.h"
+#include "WWLib/WWDefines.h"	// TheSuperHackers @bugfix 2026-09 - Nothing in the WW3D2 include chain pulled in WWDefines.h, so WW3D_ENABLE_RAW_ANIM_INTERPOLATION was UNDEFINED here. An undefined identifier in #if evaluates to 0, which made "#if !WW3D_ENABLE_RAW_ANIM_INTERPOLATION" always true: the non-interpolated update path was compiled into every translation unit regardless of the WWDefines.h setting. Being an inline function, the two possible bodies also violated the one-definition-rule across TUs and the linker silently picked one. Include the header so the flag is consistently (1) everywhere.
 #include "WW3D2/composite.h"
 #include "WW3D2/htree.h"
 #include "WW3D2/hanim.h"
