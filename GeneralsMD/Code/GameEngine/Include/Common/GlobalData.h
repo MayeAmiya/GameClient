@@ -137,6 +137,10 @@ public:
 	Bool m_windowed;
 	Int m_xResolution;
 	Int m_yResolution;
+	/// TheSuperHackers @feature Index into the enumerated render device (D3D adapter) table.
+	/// 0 (default) is the first adapter the driver reports, which on hybrid graphics laptops may be
+	/// the integrated GPU. Set this to pick a different one, or -1 to auto prefer a discrete GPU.
+	Int m_renderDeviceIndex;
 	Int m_maxShellScreens;  ///< this many shells layouts can be loaded at once
 	Bool m_useCloudMap;
 	Int  m_use3WayTerrainBlends;	///< 0 is none, 1 is normal, 2 is debug.

@@ -739,6 +739,200 @@ void W3DDisplay::init2DScene()
 /** Initialize or re-initialize the W3D display system.  Here we need to
   * create our window, and get our 3D hardware setup and online */
 //=============================================================================
+
+//-------------------------------------------------------------------------------------------------
+// TheSuperHackers @feature Combined quality setting: the AntiAliasing option doubles as the
+// overall texture quality tier. Each MSAA tier implies a matching texture filter and
+// anisotropy level, so a single dropdown controls all three. Must be called AFTER the render
+// device has been initialized (the filters query the device caps).
+//-------------------------------------------------------------------------------------------------
+static void ApplyCombinedQualityTextureSettings( UnsignedInt antiAliasLevel )
+{
+	switch (antiAliasLevel)
+	{
+		case WW3D::MULTISAMPLE_MODE_2X:
+			WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_TRILINEAR);
+			WW3D::Set_Anisotropy_Level(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC_4X);
+			break;
+		case WW3D::MULTISAMPLE_MODE_4X:
+			WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_TRILINEAR);
+			WW3D::Set_Anisotropy_Level(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC_8X);
+			break;
+		case WW3D::MULTISAMPLE_MODE_8X:
+			WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC);
+			WW3D::Set_Anisotropy_Level(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC_16X);
+			break;
+		case WW3D::MULTISAMPLE_MODE_NONE:
+		default:
+			// "Off" keeps the classic DX8-era baseline as a safe fallback.
+			WW3D::Set_Texture_Filter(TextureFilterClass::TEXTURE_FILTER_BILINEAR);
+			WW3D::Set_Anisotropy_Level(TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC_2X);
+			break;
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Case insensitive substring search, used to recognise discrete GPU names. */
+//-------------------------------------------------------------------------------------------------
+static Bool ContainsTextNoCase(const char* haystack, const char* needle)
+{
+	if (haystack == nullptr || needle == nullptr)
+	{
+		return FALSE;
+	}
+
+	const Int hayLength = (Int)strlen(haystack);
+	const Int needleLength = (Int)strlen(needle);
+	if (needleLength <= 0 || needleLength > hayLength)
+	{
+		return FALSE;
+	}
+
+	for (Int i = 0; i <= (hayLength - needleLength); ++i)
+	{
+		Bool matches = TRUE;
+		for (Int j = 0; j < needleLength; ++j)
+		{
+			if (tolower((Int)haystack[i + j]) != tolower((Int)needle[j]))
+			{
+				matches = FALSE;
+				break;
+			}
+		}
+		if (matches)
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature Asks the system which GPU is the high performance one via DXGI and
+	* returns the matching render device index, or -1 when it cannot be determined.
+	* dxgi.dll is loaded dynamically so no additional link dependency is introduced. */
+//-------------------------------------------------------------------------------------------------
+static Int GetHighPerformanceRenderDeviceIndex()
+{
+	typedef HRESULT (WINAPI *CreateDXGIFactory1Func)(REFIID riid, void** ppFactory);
+
+	HMODULE dxgiLib = ::LoadLibraryW(L"dxgi.dll");
+	if (dxgiLib == nullptr)
+	{
+		return -1;
+	}
+
+	DWORD vendorId = 0;
+	DWORD deviceId = 0;
+	DWORD subSysId = 0;
+
+	CreateDXGIFactory1Func createFactory = reinterpret_cast<CreateDXGIFactory1Func>(::GetProcAddress(dxgiLib, "CreateDXGIFactory1"));
+	if (createFactory != nullptr)
+	{
+		IDXGIFactory1* factory = nullptr;
+		if (SUCCEEDED(createFactory(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))) && factory != nullptr)
+		{
+			IDXGIFactory6* factory6 = nullptr;
+			if (SUCCEEDED(factory->QueryInterface(__uuidof(IDXGIFactory6), reinterpret_cast<void**>(&factory6))) && factory6 != nullptr)
+			{
+				IDXGIAdapter1* adapter = nullptr;
+				if (SUCCEEDED(factory6->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, __uuidof(IDXGIAdapter1), reinterpret_cast<void**>(&adapter))) && adapter != nullptr)
+				{
+					DXGI_ADAPTER_DESC1 desc;
+					::ZeroMemory(&desc, sizeof(desc));
+					if (SUCCEEDED(adapter->GetDesc1(&desc)))
+					{
+						vendorId = desc.VendorId;
+						deviceId = desc.DeviceId;
+						subSysId = desc.SubSysId;
+					}
+					adapter->Release();
+				}
+				factory6->Release();
+			}
+			factory->Release();
+		}
+	}
+
+	::FreeLibrary(dxgiLib);
+
+	if (vendorId == 0 && deviceId == 0)
+	{
+		return -1;
+	}
+
+	// Match the DXGI adapter against the enumerated render devices by hardware ids. The render
+	// device index is matched rather than the raw D3D adapter ordinal because the device table
+	// drops adapters that report no usable resolutions.
+	const Int deviceCount = WW3D::Get_Render_Device_Count();
+	for (Int pass = 0; pass < 2; ++pass)
+	{
+		const Bool matchSubSysId = (pass == 0);
+		for (Int i = 0; i < deviceCount; ++i)
+		{
+			const D3DADAPTER_IDENTIFIER8& id = WW3D::Get_Render_Device_Desc(i).Get_Adapter_Identifier();
+			if (id.VendorId != vendorId || id.DeviceId != deviceId)
+			{
+				continue;
+			}
+			if (matchSubSysId && id.SubSysId != subSysId)
+			{
+				continue;
+			}
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature Picks which render device (D3D adapter) to create.
+	* Adapters are enumerated in driver order, so index 0 is not necessarily the discrete GPU on
+	* hybrid graphics laptops - that is why the game sometimes ends up on the integrated GPU.
+	* A negative RenderDeviceIndex prefers the GPU the system reports as high performance, then
+	* falls back to a device whose name looks like a discrete NVIDIA or AMD card (RTX / GTX / RX),
+	* and finally to index 0. */
+//-------------------------------------------------------------------------------------------------
+static Int GetPreferredRenderDeviceIndex()
+{
+	const Int deviceCount = WW3D::Get_Render_Device_Count();
+	if (deviceCount <= 0)
+	{
+		return 0;
+	}
+
+	const Int configuredIndex = TheGlobalData->m_renderDeviceIndex;
+	if (configuredIndex >= 0)
+	{
+		return (configuredIndex < deviceCount) ? configuredIndex : (deviceCount - 1);
+	}
+
+	const Int highPerformanceIndex = GetHighPerformanceRenderDeviceIndex();
+	if (highPerformanceIndex >= 0)
+	{
+		return highPerformanceIndex;
+	}
+
+	static const char* discreteGpuMarkers[] = { "RTX", "GTX", "RX" };
+	const Int markerCount = (Int)(sizeof(discreteGpuMarkers) / sizeof(discreteGpuMarkers[0]));
+
+	for (Int i = 0; i < deviceCount; ++i)
+	{
+		const char* deviceName = WW3D::Get_Render_Device_Desc(i).Get_Device_Name();
+		for (Int m = 0; m < markerCount; ++m)
+		{
+			if (ContainsTextNoCase(deviceName, discreteGpuMarkers[m]))
+			{
+				return i;
+			}
+		}
+	}
+
+	return 0;
+}
+
 void W3DDisplay::init()
 {
 
@@ -840,6 +1034,10 @@ void W3DDisplay::init()
 		m_2DRender = NEW Render2DClass;
 		DEBUG_ASSERTCRASH( m_2DRender, ("Cannot create Render2DClass") );
 
+		// TheSuperHackers @feature The render device was hardcoded to index 0 before, which on hybrid
+		// graphics laptops can be the integrated GPU. Resolve it once for all retry attempts.
+		const Int renderDeviceIndex = GetPreferredRenderDeviceIndex();
+
 		WW3DErrorType renderDeviceError;
 		Int attempt = 0;
 		do
@@ -888,14 +1086,13 @@ void W3DDisplay::init()
 			}
 
 			// TheSuperHackers @feature Mauller 13/03/2026 Add native MSAA support, must be set before creating render device
-#if !defined(GENERALS_ONLINE_DISABLE_TEXTURE_FILTERING_AND_AA)
+			// TheSuperHackers @feature Combined quality setting: MSAA follows the AntiAliasing
+			// option again (upstream had disabled it for weak GPUs); the matching texture
+			// filter + anisotropy pair is applied below, after the device is up.
 			WW3D::Set_MSAA_Mode((WW3D::MultiSampleModeEnum)TheWritableGlobalData->m_antiAliasLevel);
-#else
-			WW3D::Set_MSAA_Mode(WW3D::MultiSampleModeEnum::MULTISAMPLE_MODE_NONE);
-#endif
 
 			renderDeviceError = WW3D::Set_Render_Device(
-				0,
+				renderDeviceIndex,
 				getWidth(),
 				getHeight(),
 				getBitDepth(),
@@ -911,6 +1108,13 @@ void W3DDisplay::init()
 				TheWritableGlobalData->m_textureFilteringMode = WW3D::Get_Texture_Filter();
 				WW3D::Set_Anisotropy_Level(TheWritableGlobalData->m_textureAnisotropyLevel);
 				TheWritableGlobalData->m_textureAnisotropyLevel = WW3D::Get_Anisotropy_Level();
+			}
+#else
+			// Combined quality setting: derive the texture filter + anisotropy pair from the
+			// effective (possibly device-clamped) MSAA mode so all three stay in sync.
+			if (renderDeviceError == WW3D_ERROR_OK) {
+				TheWritableGlobalData->m_antiAliasLevel = (UnsignedInt)WW3D::Get_MSAA_Mode();
+				ApplyCombinedQualityTextureSettings(TheWritableGlobalData->m_antiAliasLevel);
 			}
 #endif
 

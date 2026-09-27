@@ -77,6 +77,7 @@ GlobalData* GlobalData::m_theOriginal = nullptr;
 	{ "Windowed",									INI::parseBool,				nullptr,			offsetof( GlobalData, m_windowed ) },
 	{ "XResolution",							INI::parseInt,				nullptr,			offsetof( GlobalData, m_xResolution ) },
 	{ "YResolution",							INI::parseInt,				nullptr,			offsetof( GlobalData, m_yResolution ) },
+	{ "RenderDeviceIndex",			INI::parseInt,				nullptr,			offsetof( GlobalData, m_renderDeviceIndex ) },
 	{ "MapName",									INI::parseAsciiString,nullptr,			offsetof( GlobalData, m_mapName ) },
 	{ "MoveHintName",							INI::parseAsciiString,nullptr,			offsetof( GlobalData, m_moveHintName ) },
 	{ "UseTrees",									INI::parseBool,				nullptr,			offsetof( GlobalData, m_useTrees ) },
@@ -640,6 +641,8 @@ GlobalData::GlobalData()
 	m_windowed = 0;
 	m_xResolution = 800;
 	m_yResolution = 600;
+	// TheSuperHackers @feature -1 auto selects the render device (see W3DDisplay::init).
+	m_renderDeviceIndex = -1;
 	m_maxShellScreens = 0;
 	m_useCloudMap = FALSE;
 	m_use3WayTerrainBlends = 1;
