@@ -779,10 +779,21 @@ Also determines whether objects are blocked, and if so, if they are stuck.  jba.
 //-------------------------------------------------------------------------------------------------
 void MissileAIUpdate::airborneTargetGone()
 {
-	// I would really love it if this could retarget, but all of the targeting and legality is done
-	// by the Weapon that fired me.  The safest thing for me to do in this state is to just run out of gas.
-	m_fuelExpirationDate = TheGameLogic->getFrame();
-	switchToState(KILL_SELF);
+	// TheSuperHackers @tweak When the tracked target dies mid-flight, keep flying to the last
+	// known target position and detonate there with the full warhead, instead of silently
+	// self-destructing (vanilla EA just ran out of gas and vanished without any effect).
+	// A grace period bounds the detour; if the missile still cannot arrive, it falls back
+	// to the vanilla behavior (KILL_SELF).
+	if (!m_isTrackingTarget)
+	{
+		m_fuelExpirationDate = TheGameLogic->getFrame();
+		switchToState(KILL_SELF);
+		return;
+	}
+	m_isTrackingTarget = FALSE;	// one-shot: do not re-trigger from the state handlers
+	m_fuelExpirationDate = TheGameLogic->getFrame() + 3 * LOGICFRAMES_PER_SECOND;
+	switchToState(KILL);
+	aiMoveToPosition(&m_originalTargetPos, CMD_FROM_AI);
 }
 
 //-------------------------------------------------------------------------------------------------

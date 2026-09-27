@@ -599,7 +599,13 @@ UpdateSleepTime DumbProjectileBehavior::update()
 
 	if (m_victimID != INVALID_ID && d->m_flightPathAdjustDistPerFrame > 0.0f)
 	{
+		// TheSuperHackers @tweak Never chase a dead/dying victim. The dying object sinks into
+		// the ground or gets replaced by a wreck, and following it dragged the flight path end
+		// underground (or into the wreck), so the shell detonated invisibly with no effect.
+		// Once the target dies, keep the last tracked end point: the shell continues to where
+		// the target was and detonates there normally.
 		Object* victim = TheGameLogic->findObjectByID(m_victimID);
+		if (victim && !victim->isEffectivelyDead())
 		if (victim)
 		{
 			Coord3D newVictimPos;
