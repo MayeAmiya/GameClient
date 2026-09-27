@@ -680,6 +680,7 @@ void pickAndPlayUnitVoiceResponse( const DrawableList *list, GameMessage::Type m
 			case GameMessage::MSG_RESUME_CONSTRUCTION:
 			case GameMessage::MSG_DOZER_CONSTRUCT:
 			case GameMessage::MSG_DOZER_CONSTRUCT_LINE:
+			case GameMessage::MSG_DOZER_WAYPOINT_BUILD:
 			{
 				soundToPlayPtr = templ->getPerUnitSound( "VoiceBuildResponse" );
 				objectWithSound = obj;

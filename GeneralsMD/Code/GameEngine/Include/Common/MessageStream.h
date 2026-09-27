@@ -609,6 +609,7 @@ public:
 		MSG_LOGIC_CRC,															///< CRC from the logic passed around in a network game :)
 		MSG_SET_MINE_CLEARING_DETAIL,								///< CRC from the logic passed around in a network game :)
 		MSG_ENABLE_RETALIATION_MODE,								///< Turn retaliation mode on or off.
+		MSG_DOZER_WAYPOINT_BUILD,									///< TheSuperHackers @feature like MSG_DOZER_CONSTRUCT, but queues the construction while in waypoint mode (builder builds it after finishing its current path/tasks). NOTE: new network messages must be appended at the END of this enum, before the debug block, to keep the IDs of all existing messages stable.
 
 		MSG_BEGIN_DEBUG_NETWORK_MESSAGES = 1900,		///< network messages that exist only in debug/internal builds. all grouped separately.
 
