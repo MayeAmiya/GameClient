@@ -1385,6 +1385,59 @@ void W3DView::update()
 
 //	Int elapsedTimeMs = TheW3DFrameLengthInMsec; // Assume a constant time flow.  It just works out better.  jba.
 
+#if defined(GENERALS_ONLINE)
+	// TheSuperHackers @feature GenTool-style live camera pitch: hold PageUp/PageDown
+	// to continuously tilt the camera (30..90 degrees, frame-rate independent rate).
+	// On key release the final value is persisted to "camera"."pitch" in
+	// GeneralsOnlineData/settings.json so the launcher and future games pick it up.
+	static Bool s_pitchAdjusting = false;
+	static double s_lastAdjustTimeMs = -1.0;
+
+	if (TheGameLogic && TheGameLogic->isInGame() && !TheGameLogic->isInShellGame())
+	{
+		const Bool pageUpHeld = (::GetAsyncKeyState(VK_PRIOR) & 0x8000) != 0;		// PageUp - steeper
+		const Bool pageDownHeld = (::GetAsyncKeyState(VK_NEXT) & 0x8000) != 0;	// PageDown - shallower
+
+		if (pageUpHeld || pageDownHeld)
+		{
+			const double nowMs = (double)::GetTickCount();
+			double deltaMs = s_lastAdjustTimeMs >= 0.0 ? nowMs - s_lastAdjustTimeMs : 16.0;
+			s_lastAdjustTimeMs = nowMs;
+			if (deltaMs < 0.0) deltaMs = 0.0;				// tick wrap
+			if (deltaMs > 100.0) deltaMs = 100.0;		// clamp hitches
+
+			const Real rateDegPerSec = 25.0f;
+			const Real deltaDeg = (pageUpHeld ? rateDegPerSec : -rateDegPerSec) * (Real)(deltaMs / 1000.0);
+
+			// Anchor on the user's configured pitch (m_defaultPitch), not the live camera,
+			// so scripted/replay camera angles never leak into the persisted setting.
+			Real newDeg = (Real)(m_defaultPitch * 180.0f / WWMATH_PI) + deltaDeg;
+			newDeg = newDeg < 30.0f ? 30.0f : (newDeg > 90.0f ? 90.0f : newDeg);
+
+			Real newPitchRad = DEG_TO_RADF(newDeg);
+			if (newPitchRad != m_defaultPitch)
+			{
+				setDefaultPitch(newPitchRad);
+				setPitch(newPitchRad);
+			}
+			s_pitchAdjusting = true;
+		}
+		else if (s_pitchAdjusting)
+		{
+			// Keys released - persist the final pitch.
+			s_pitchAdjusting = false;
+			s_lastAdjustTimeMs = -1.0;
+			NGMP_OnlineServicesManager::Settings.Camera_SetPitch((Real)(m_defaultPitch * 180.0f / WWMATH_PI));
+		}
+	}
+	else
+	{
+		// Not in a playable game - drop any pending adjustment state without saving.
+		s_pitchAdjusting = false;
+		s_lastAdjustTimeMs = -1.0;
+	}
+#endif
+
 	if (TheTerrainRenderObject && TheTerrainRenderObject->doesNeedFullUpdate())
 	{
 		updateTerrain();

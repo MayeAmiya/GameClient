@@ -21,6 +21,14 @@ public:
 	float Camera_GetPitch() const { return m_Camera_Pitch; }
 	float Camera_GetMaxHeight() const { return m_Camera_MaxHeight; }
 
+	// TheSuperHackers @feature Persist a new GenTool-style camera pitch (degrees).
+	// Called when the user finishes adjusting the pitch in-game (PageUp/PageDown).
+	void Camera_SetPitch(float pitchDegrees)
+	{
+		m_Camera_Pitch = std::clamp<float>(pitchDegrees, 0.0f, 90.0f);
+		Save();
+	}
+
 	float DetermineCameraMaxHeight();
 
 	void Graphics_SetFPS(int fpsLimit, bool bLimitFramerate)
