@@ -101,7 +101,7 @@ ProductionUpdateModuleData::ProductionUpdateModuleData()
 	m_doorClosingTime = 0;
 	m_constructionCompleteDuration = 0;
 	m_quantityModifiers.clear();
-	m_maxQueueEntries = 9;
+	m_maxQueueEntries = 50;	// TheSuperHackers @feature raised from 9 so shift-clicking and long build plans fit; the queue UI stacks identical units
 	m_disabledTypesToProcess = MAKE_DISABLED_MASK(DISABLED_HELD);
 }
 
@@ -221,7 +221,7 @@ ProductionUpdate::~ProductionUpdate()
 //-------------------------------------------------------------------------------------------------
 CanMakeType ProductionUpdate::canQueueUpgrade( const UpgradeTemplate *upgrade ) const
 {
-	if (m_productionCount >= getProductionUpdateModuleData()->m_maxQueueEntries)
+	if (m_productionCount >= MAX( getProductionUpdateModuleData()->m_maxQueueEntries, 450 ))
 		return CANMAKE_QUEUE_FULL;
 
 	return CANMAKE_OK;
@@ -229,26 +229,125 @@ CanMakeType ProductionUpdate::canQueueUpgrade( const UpgradeTemplate *upgrade ) 
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
+
 CanMakeType ProductionUpdate::canQueueCreateUnit( const ThingTemplate *unitType ) const
 {
-	/// @todo srj -- this is horrible, but the "right" way to do it is to move
-	// ProductionUpdate to be part of ParkingPlaceBehavior, which I don't currently
-	// have time for...
-	ParkingPlaceBehaviorInterface* pp = nullptr;
-	for (BehaviorModule** i = getObject()->getBehaviorModules(); *i; ++i)
+	// TheSuperHackers @feature parking-place capacity check. The vanilla test asked for a
+	// *currently free physical spot*, which capped the queue at the number of spots even
+	// though finished units only sit on them briefly on their way out (the old "only 10
+	// clicks" bug). What the player actually expects is: never queue more aircraft than the
+	// airfield can hold (4 or 5 spots depending on the faction), while aircraft that do not
+	// take a parking spot at all (KINDOF_PRODUCED_AT_HELIPAD, see
+	// ParkingPlaceBehavior::shouldReserveDoorWhenQueued) stay unlimited.
+	// So: count the queue reservations instead of the physical occupancy.
+	for( BehaviorModule **mod = getObject()->getBehaviorModules(); *mod; ++mod )
 	{
-		if ((pp = (*i)->getParkingPlaceBehaviorInterface()) != nullptr)
+		ParkingPlaceBehaviorInterface *pp = (*mod)->getParkingPlaceBehaviorInterface();
+		if( pp == nullptr )
+			continue;
+
+		// unit types that never occupy a parking space are exempt from the limit
+		if( pp->shouldReserveDoorWhenQueued( unitType ) == FALSE )
+			continue;
+
+		const Int capacity = pp->getSpaceCount();
+		if( capacity <= 0 )
+			continue;
+
+		Int reserved = 0;		// queue entries that will need a parking space
+		for( const ProductionEntry *e = m_productionQueue; e != nullptr; e = e->m_next )
 		{
-			if (pp->shouldReserveDoorWhenQueued(unitType) && !pp->hasAvailableSpaceFor(unitType))
-				return CANMAKE_PARKING_PLACES_FULL;
+			if( e->m_type != PRODUCTION_UNIT )
+				continue;
+			if( pp->shouldReserveDoorWhenQueued( e->m_objectToProduce ) == FALSE )
+				continue;
+			reserved += e->getProductionQuantity();
 		}
+
+		// spaces that are already taken (aircraft parked on the airfield, plus spaces
+		// reserved for a unit on its way out) are not available for new orders either
+		const Int held = pp->getOccupiedSpaceCount();
+
+		if( reserved + held + 1 > capacity )
+			return CANMAKE_PARKING_PLACES_FULL;
 	}
 
-	if (m_productionCount >= getProductionUpdateModuleData()->m_maxQueueEntries)
+	if (m_productionCount >= MAX( getProductionUpdateModuleData()->m_maxQueueEntries, 450 ))
 		return CANMAKE_QUEUE_FULL;
+
+	// TheSuperHackers @feature the client-side availability check must match queueCreateUnit's
+	// rules: a run of N identical units takes ceil(N/50) buttons, every upgrade its own, and
+	// the whole thing (plus the new unit) must fit in 9 buttons. Same-type runs longer than
+	// 50 span several buttons instead of being refused.
+	{
+		const Int MAX_QUEUE_BUTTONS = 9;	// == MAX_BUILD_QUEUE_BUTTONS in GameClient's ControlBar.h
+
+		if( countQueueButtonsFor( m_productionQueue, unitType ) > MAX_QUEUE_BUTTONS )
+			return CANMAKE_QUEUE_FULL;
+	}
 
 	return CANMAKE_OK;
 
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature shared queue-button accounting: identical consecutive units share
+	* one button (50 of them per button), every upgrade takes a button of its own. 'newUnit'
+	* simulates one more unit of that type joining the queue — pass nullptr to measure the
+	* queue as it is. */
+//-------------------------------------------------------------------------------------------------
+Int ProductionUpdate::countQueueButtonsFor( const ProductionEntry *queue, const ThingTemplate *newUnit )
+{
+
+	Int groupCount = 0;			// buttons used by segments CLOSED so far
+	Int tailLen = 0;				// length of the trailing unit run (0 = none / upgrade tail)
+	const ThingTemplate *tailT = nullptr;
+	Bool tailIsUpgrade = FALSE;
+
+	for( const ProductionEntry *e = queue; e != nullptr; e = e->m_next )
+	{
+		if( e->m_type == PRODUCTION_UNIT )
+		{
+			if( tailIsUpgrade || tailT == nullptr || !e->m_objectToProduce->isEquivalentTo( tailT ) )
+			{
+				// close the previous segment
+				groupCount += tailIsUpgrade ? 1 : ( tailLen + 49 ) / 50;
+				tailLen = 1;
+				tailT = e->m_objectToProduce;
+				tailIsUpgrade = FALSE;
+			}
+			else
+				++tailLen;
+		}
+		else
+		{
+			groupCount += tailIsUpgrade ? 1 : ( tailLen + 49 ) / 50;
+			tailLen = 0;
+			tailT = nullptr;
+			tailIsUpgrade = TRUE;
+		}
+	}
+
+	// buttons used by the closed segments plus the trailing segment
+	Int buttons = groupCount + ( tailIsUpgrade ? 1 : ( tailLen + 49 ) / 50 );
+
+	if( newUnit != nullptr )
+	{
+		// simulate the new unit joining (or opening) the tail segment
+		if( !tailIsUpgrade && tailT != nullptr && tailT->isEquivalentTo( newUnit ) )
+			buttons = groupCount + ( tailLen + 1 + 49 ) / 50;
+		else
+			buttons += 1;
+	}
+
+	return buttons;
+
+}
+
+//-------------------------------------------------------------------------------------------------
+UnsignedInt ProductionUpdate::getQueueButtonCount() const
+{
+	return (UnsignedInt)countQueueButtonsFor( m_productionQueue, nullptr );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -289,7 +388,7 @@ Bool ProductionUpdate::queueUpgrade( const UpgradeTemplate *upgrade )
       (player->hasUpgradeComplete( upgrade ) || player->hasUpgradeInProduction( upgrade )) )
 		return FALSE;
 
-	if (m_productionCount >= getProductionUpdateModuleData()->m_maxQueueEntries)
+	if (m_productionCount >= MAX( getProductionUpdateModuleData()->m_maxQueueEntries, 450 ))
 	{
 		DEBUG_CRASH(("Production Queue is full... how did we get here?"));
 		return FALSE;
@@ -398,24 +497,69 @@ Bool ProductionUpdate::queueCreateUnit( const ThingTemplate *unitType, Productio
 		{
 			if (pp->shouldReserveDoorWhenQueued(unitType))
 			{
-				ExitInterface* exitInterface = getObject()->getObjectExitInterface();
-				if (exitInterface)
-				{
-					exitDoor = exitInterface->reserveDoorForExit(unitType, nullptr);
-				}
-				if (exitDoor == DOOR_NONE_AVAILABLE)
-				{
-					return FALSE;
-				}
+				// TheSuperHackers @bugfix queuing no longer reserves a door up front: with
+				// 9 groups x 50, the door count (1-2) and physical spots (about 10) would cap
+				// the queue almost immediately, and that was the "only 10 clicks" limit.
+				// Finished vehicles wait inside for a spot anyway — the update loop reserves
+				// the door on the fly when the unit actually exits, so the entry keeps
+				// DOOR_NONE_AVAILABLE until then.
 				break;
 			}
 		}
 	}
 
-	if (m_productionCount >= getProductionUpdateModuleData()->m_maxQueueEntries)
+	if (m_productionCount >= MAX( getProductionUpdateModuleData()->m_maxQueueEntries, 450 ))
 	{
 		DEBUG_CRASH(("Production Queue is full... how did we get here?"));
 		return FALSE;
+	}
+
+	// TheSuperHackers @feature queue capacity model, per design: up to 9 buttons x 50 units
+	// each = 450. One pass computes how many buttons the queue (plus the new unit) would
+	// occupy — a run of N identical units takes ceil(N/50) buttons, every upgrade its own.
+	// Same-type runs longer than 50 simply span several buttons (the display splits them),
+	// so nothing is capped at 10 anywhere.
+	{
+		const Int MAX_QUEUE_BUTTONS = 9;	// == MAX_BUILD_QUEUE_BUTTONS in GameClient's ControlBar.h
+
+		Int groupCount = 0;			// buttons used by segments CLOSED so far
+		Int tailLen = 0;				// length of the trailing unit run (0 = none / upgrade tail)
+		const ThingTemplate *tailT = nullptr;
+		Bool tailIsUpgrade = FALSE;
+
+		for( const ProductionEntry *e = m_productionQueue; e != nullptr; e = e->m_next )
+		{
+			if( e->m_type == PRODUCTION_UNIT )
+			{
+				if( tailIsUpgrade || tailT == nullptr || !e->m_objectToProduce->isEquivalentTo( tailT ) )
+				{
+					// close the previous segment
+					groupCount += tailIsUpgrade ? 1 : ( tailLen + 49 ) / 50;
+					tailLen = 1;
+					tailT = e->m_objectToProduce;
+					tailIsUpgrade = FALSE;
+				}
+				else
+					++tailLen;
+			}
+			else
+			{
+				groupCount += tailIsUpgrade ? 1 : ( tailLen + 49 ) / 50;
+				tailLen = 0;
+				tailT = nullptr;
+				tailIsUpgrade = TRUE;
+			}
+		}
+
+		// simulate the new unit joining (or opening) the tail segment
+		Int buttonsAfter;
+		if( !tailIsUpgrade && tailT != nullptr && tailT->isEquivalentTo( unitType ) )
+			buttonsAfter = groupCount + ( tailLen + 1 + 49 ) / 50;
+		else
+			buttonsAfter = groupCount + ( tailLen + 49 ) / 50 + 1;
+
+		if( buttonsAfter > MAX_QUEUE_BUTTONS )
+			return FALSE;	// no free button left for this order
 	}
 
 	// take the cost for the build away from the player

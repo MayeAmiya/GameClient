@@ -38,6 +38,7 @@
 #include "Common/ActionManager.h"
 #include "Common/FramePacer.h"
 #include "Common/GameType.h"
+#include "GameClient/GlobalLanguage.h"	// TheSuperHackers @feature TheGlobalLanguageData (default font for queue count numbers)
 #include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/Override.h"
@@ -3863,6 +3864,86 @@ void ControlBar::animateSpecialPowerShortcut( Bool isOn )
 	{
 		m_animateWindowManagerForGenShortcuts->reverseAnimateWindow();
 	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature custom draw func for the build queue buttons: draws the button
+	exactly like the default gadget painter would, then renders the queued-unit count as a
+	big bold Microsoft YaHei number in the bottom-right corner — the classic spot for stack
+	counts. Installed via winSetDrawFunc() in populateBuildQueue, so it draws in the button's
+	OWN pass — a pass we KNOW renders text (that is how the label works), unlike the
+	InGameUI::draw attempt whose output got covered by the window painting. */
+//-------------------------------------------------------------------------------------------------
+void ( *ControlBar::s_originalQueueDraw )( GameWindow *, WinInstanceData * ) = nullptr;
+
+void ControlBar::queueButtonDrawFunc( GameWindow *window, WinInstanceData *instData )
+{
+	// draw the button itself exactly like the default gadget painter would
+	if( s_originalQueueDraw != nullptr )
+		s_originalQueueDraw( window, instData );
+
+	// find this button's slot and its stack count
+	Int slot = -1;
+	Int count = 0;
+	for( Int i = 0; i < MAX_BUILD_QUEUE_BUTTONS; i++ )
+	{
+		if( TheControlBar->m_queueData[ i ].control == window )
+		{
+			slot = i;
+			count = TheControlBar->m_queueData[ i ].stackCount;
+			break;
+		}
+	}
+
+	if( slot < 0 || count <= 1 )
+		return;
+
+	if( TheControlBar->m_queueCountDisplayStrings[ slot ] == nullptr )
+	{
+		TheControlBar->m_queueCountDisplayStrings[ slot ] = TheDisplayStringManager->newDisplayString();
+
+		// TheSuperHackers @tweaked the count font: Microsoft YaHei bold, eight points bigger
+		// than the default display font — the stock per-language font (Batang/Times 12,
+		// non-bold) renders the count too small and too thin to read at a glance.
+		// Create_GDI_Font passes any installed family name straight to ::CreateFont, so
+		// "Microsoft YaHei" (bundled with every Windows since Vista) is safe; GDI silently
+		// falls back to a default font if it is ever missing. Guard the result:
+		// loadFontData can fail for an unregistered size, and setFont(NULL) is silently
+		// ignored, which left the number at its old size.
+		if( TheGlobalLanguageData )
+		{
+			GameFont *biggerFont = TheFontLibrary->getFont(
+				"Microsoft YaHei",
+				TheGlobalLanguageData->m_defaultDisplayStringFont.size + 8,
+				TRUE );
+			if( biggerFont != nullptr )
+				TheControlBar->m_queueCountDisplayStrings[ slot ]->setFont( biggerFont );
+		}
+	}
+
+	UnicodeString countText;
+	countText.format( L"%d", count );
+	DisplayString *countString = TheControlBar->m_queueCountDisplayStrings[ slot ];
+	countString->setText( countText );
+
+	// bottom-right corner of the button, right-aligned on the text width. The drop shadow
+	// uses the default (1,1) offset — the old explicit (0,0) offset drew the shadow exactly
+	// underneath each glyph where it vanished, leaving plain white digits with no outline.
+	Int x = 0, y = 0, w = 0, h = 0;
+	window->winGetScreenPosition( &x, &y );
+	window->winGetSize( &w, &h );
+	Int fontSize = 20;
+	if( TheGlobalLanguageData )
+		fontSize = TheGlobalLanguageData->m_defaultDisplayStringFont.size + 8;
+
+	Int drawX = x + w - countString->getWidth() - 8;
+	Int drawY = y + h - fontSize - 7;
+	if( drawX < x + 2 )
+		drawX = x + 2;  // never clip the leading digit on narrow buttons
+
+	countString->draw( drawX, drawY,
+										 GameMakeColor( 255, 255, 255, 255 ),
+										 GameMakeColor( 0, 0, 0, 255 ) );
 }
 
 void ControlBar::showSpecialPowerShortcut()

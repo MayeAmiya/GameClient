@@ -536,6 +536,7 @@ void ControlBar::resetBuildQueueData()
 		m_queueData[ i ].type = PRODUCTION_INVALID;
 		m_queueData[ i ].productionID = PRODUCTIONID_INVALID;
 		m_queueData[ i ].upgradeToResearch = nullptr;
+		m_queueData[ i ].stackCount = 0;
 
 	}
 
@@ -581,6 +582,22 @@ void ControlBar::populateBuildQueue( Object *producer )
 		m_queueData[ i ].control = TheWindowManager->winGetWindowFromId( m_contextParent[ CP_BUILD_QUEUE ],
 																																		 buildQueueIDs[ i ] );
 
+		// TheSuperHackers @feature install our custom draw func (once): it paints the button
+		// through the saved default painter and then the big count number on top. The draw
+		// func lives on the button, so it keeps working across repopulations.
+		if( m_queueData[ i ].control != nullptr &&
+				m_queueData[ i ].control->winGetDrawFunc() != queueButtonDrawFunc )
+		{
+			s_originalQueueDraw = m_queueData[ i ].control->winGetDrawFunc();
+			m_queueData[ i ].control->winSetDrawFunc( queueButtonDrawFunc );
+		}
+
+		// TheSuperHackers @feature let the queue buttons react to RIGHT clicks (shift+right
+		// click cancels the whole stack). GadgetPushButton ignores right mouse events
+		// entirely unless the window carries WIN_STATUS_RIGHT_CLICK.
+		if( m_queueData[ i ].control != nullptr )
+			m_queueData[ i ].control->winSetStatus( WIN_STATUS_RIGHT_CLICK );
+
 		// disable window by default
 		m_queueData[ i ].control->winEnable( FALSE );
 
@@ -603,14 +620,33 @@ void ControlBar::populateBuildQueue( Object *producer )
 	const ProductionEntry *production;
 	Int windowIndex = 0;
 	const Image *image;
-	for( production = pu->firstProduction();
-			 production;
-			 production = pu->nextProduction( production ) )
+	production = pu->firstProduction();
+	while( production != nullptr )
 	{
 
 		// don't go above how many queue windows we have
 		if( windowIndex >= MAX_BUILD_QUEUE_BUTTONS )
 			break;  // exit for
+
+		// TheSuperHackers @feature stack consecutive identical units into ONE queue button and
+		// show the remaining count on it, so queueing 5 tanks + 5 SAMs takes two buttons instead
+		// of ten. Purely cosmetic: the simulation keeps one entry per unit, so cancelling still
+		// refunds and removes exactly one unit per click, and the number ticks down on its own
+		// (5-4-3-2-1) as each unit finishes and its entry leaves the queue.
+		const ProductionEntry *stackEnd = production;
+		Int stackCount = 0;	// the loop below counts the entry itself first, so start at zero
+		if( production->getProductionType() == PRODUCTION_UNIT )
+		{
+			const ThingTemplate *unitType = production->getProductionObject();
+			while( stackEnd != nullptr &&
+						 stackEnd->getProductionType() == PRODUCTION_UNIT &&
+						 stackEnd->getProductionObject()->isEquivalentTo( unitType ) &&
+						 stackCount < 50 )	// one button represents at most 50; the rest gets its own button
+			{
+				stackCount++;
+				stackEnd = pu->nextProduction( stackEnd );
+			}
+		}
 
 		// set the command into the queue button
 		if( production->getProductionType() == PRODUCTION_UNIT )
@@ -620,6 +656,7 @@ void ControlBar::populateBuildQueue( Object *producer )
 			setControlCommand( m_queueData[ windowIndex ].control, cancelUnitCommand );
 			m_queueData[ windowIndex ].type = PRODUCTION_UNIT;
 			m_queueData[ windowIndex ].productionID = production->getProductionID();
+			m_queueData[ windowIndex ].stackCount = stackCount;
 
 			// set the images
 			m_queueData[ windowIndex ].control->winEnable( TRUE );
@@ -636,6 +673,10 @@ void ControlBar::populateBuildQueue( Object *producer )
 			//Show the veterancy rank of the object being constructed in the queue
 			const Image *image = calculateVeterancyOverlayForThing( production->getProductionObject() );
 			GadgetButtonDrawOverlayImage( m_queueData[ windowIndex ].control, image );
+
+			// TheSuperHackers @feature the count is rendered by queueButtonDrawFunc (big number,
+			// top-right), so the button label stays empty — no more tiny covered text.
+			GadgetButtonSetText( m_queueData[ windowIndex ].control, L"" );
 			//
 			// note we're not setting a disabled image into the queue button ... when there is
 			// nothing in the queue we set the button to disabled, we want to leave the disabled
@@ -677,6 +718,13 @@ void ControlBar::populateBuildQueue( Object *producer )
 
 		// we have filled up this window now
 		windowIndex++;
+
+		// TheSuperHackers @feature advance past everything we just merged into this button.
+		// For a stacked unit run, stackEnd already points at the first entry after the run;
+		// for anything else (upgrades, single units) it just means the next entry.
+		production = ( production->getProductionType() == PRODUCTION_UNIT )
+								? stackEnd
+								: pu->nextProduction( production );
 
 	}
 
@@ -1056,7 +1104,13 @@ CommandAvailability ControlBar::getCommandAvailability( const CommandButton *com
 		AIUpdateInterface *ai = obj->getAI();
 		if( ai && ai->isMoving() )
 		{
-			return COMMAND_RESTRICTED;
+			// TheSuperHackers @feature waypoint build: while the player is laying out a
+			// waypoint route the builder is (by definition) walking it, so this restriction
+			// would grey out the entire build panel and make it impossible to append further
+			// build orders along the route. Waypoint orders are queued rather than executed
+			// on the spot, so being in motion is not a reason to block them here.
+			if( TheInGameUI == nullptr || TheInGameUI->isInWaypointMode() == FALSE )
+				return COMMAND_RESTRICTED;
 		}
 	}
 
@@ -1120,7 +1174,11 @@ CommandAvailability ControlBar::getCommandAvailability( const CommandButton *com
 		return COMMAND_RESTRICTED;
 	}
 
-	Bool queueMaxed = pu ? ( pu->getProductionCount() == MAX_BUILD_QUEUE_BUTTONS ) : FALSE;
+	// TheSuperHackers @bugfix compare *button* usage against the 9 physical queue buttons
+	// instead of the raw entry count. Identical units stack into a single button (50 each),
+	// so nine queued infantry used to grey out every build button even though the queue
+	// (and the queue UI) had plenty of room left.
+	Bool queueMaxed = pu ? ( pu->getQueueButtonCount() >= MAX_BUILD_QUEUE_BUTTONS ) : FALSE;
 
 	switch( command->getCommandType() )
 	{
@@ -1153,7 +1211,14 @@ CommandAvailability ControlBar::getCommandAvailability( const CommandButton *com
 
 			// if building anything at all right now we can't build another
 			if( dozerAI->isTaskPending( DOZER_TASK_BUILD ) == TRUE )
-				return COMMAND_RESTRICTED;
+			{
+				// TheSuperHackers @feature waypoint build: waypoint orders are queued rather
+				// than executed on the spot, so being mid-construction is no reason to grey out
+				// the whole build panel — the player still has to be able to append further
+				// build orders along the route. Everything else keeps the vanilla behaviour.
+				if( TheInGameUI == nullptr || TheInGameUI->isInWaypointMode() == FALSE )
+					return COMMAND_RESTRICTED;
+			}
 
 			// return whether or not the player can build this thing
 			if( player->canBuild( whatToBuild ) == FALSE )
@@ -1191,18 +1256,18 @@ CommandAvailability ControlBar::getCommandAvailability( const CommandButton *com
 					return COMMAND_HIDDEN;
 			}
 
-			if( queueMaxed )
-			{
-				return COMMAND_RESTRICTED;
-			}
-
+			// TheSuperHackers @bugfix grey the button out only when a unit of THIS type really
+			// does not fit any more (canMakeUnit applies the same stacking rules as the queue
+			// itself). The old "entry count == 9 buttons" test stopped every plain click at
+			// nine queued units even when they all shared a single queue button.
 			// return whether or not the player can build this thing
 			//NOTE: Player::canBuild() only checks prerequisites!
 			if( player->canBuild( command->getThingTemplate() ) == FALSE )
 				return COMMAND_RESTRICTED;
 
 			CanMakeType makeType = TheBuildAssistant->canMakeUnit( obj, command->getThingTemplate() );
-			if( makeType == CANMAKE_MAXED_OUT_FOR_PLAYER || makeType == CANMAKE_PARKING_PLACES_FULL )
+			if( makeType == CANMAKE_MAXED_OUT_FOR_PLAYER || makeType == CANMAKE_PARKING_PLACES_FULL ||
+					makeType == CANMAKE_QUEUE_FULL )
 			{
 				//Disable the button if the player has a max amount of these units in build queue or existence.
 				return COMMAND_RESTRICTED;

@@ -165,6 +165,11 @@ public:
 
 	virtual UnsignedInt getProductionCount() const = 0;
 
+	/// TheSuperHackers @feature how many of the (9) physical queue buttons the current queue
+	/// occupies. Identical consecutive units share one button (up to 50 each) and every
+	/// upgrade takes a button of its own, so this is NOT the number of queued entries.
+	virtual UnsignedInt getQueueButtonCount() const = 0;
+
 	virtual const ProductionEntry *firstProduction() const = 0;
 	virtual const ProductionEntry *nextProduction( const ProductionEntry *p ) const = 0;
 
@@ -220,6 +225,12 @@ public:
 	virtual void cancelAndRefundAllProduction() override;									///< cancel and refund anything in the production queue
 
 	virtual UnsignedInt getProductionCount() const override { return m_productionCount; }    ///< return # of things in the production queue
+	virtual UnsignedInt getQueueButtonCount() const override;    ///< # of physical queue buttons this queue occupies
+
+	/// TheSuperHackers @feature shared queue-button accounting (see canQueueCreateUnit).
+	/// 'newUnit' simulates one more unit of that type joining the queue; pass nullptr to
+	/// measure the queue as it is right now.
+	static Int countQueueButtonsFor( const ProductionEntry *queue, const ThingTemplate *newUnit );
 
 	// walking the production list from outside
 	virtual const ProductionEntry *firstProduction() const override { return m_productionQueue; }

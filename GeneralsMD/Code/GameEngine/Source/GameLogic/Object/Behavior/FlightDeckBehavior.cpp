@@ -354,6 +354,24 @@ void FlightDeckBehavior::purgeDead()
 
 //-------------------------------------------------------------------------------------------------
 // note: called from client, so MUST NOT modify self in any way, or desyncs will occur
+Int FlightDeckBehavior::getOccupiedSpaceCount() const
+{
+	// TheSuperHackers @feature deck spaces taken by a live aircraft right now
+	Int occupied = 0;
+
+	for( std::vector<FlightDeckInfo>::const_iterator it = m_spaces.begin(); it != m_spaces.end(); ++it )
+	{
+		if( it->m_objectInSpace == INVALID_ID )
+			continue;
+
+		Object *obj = TheGameLogic ? TheGameLogic->findObjectByID( it->m_objectInSpace ) : nullptr;
+		if( obj != nullptr && obj->isEffectivelyDead() == FALSE )
+			++occupied;
+	}
+
+	return occupied;
+}
+
 Bool FlightDeckBehavior::hasReservedSpace(ObjectID id) const
 {
 	if (!m_gotInfo)

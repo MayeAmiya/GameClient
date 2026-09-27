@@ -165,6 +165,9 @@ public:
 
 	virtual UnsignedInt getProductionCount() const = 0;
 
+	/// TheSuperHackers @feature number of physical queue buttons this queue occupies
+	virtual UnsignedInt getQueueButtonCount() const = 0;
+
 	virtual const ProductionEntry *firstProduction() const = 0;
 	virtual const ProductionEntry *nextProduction( const ProductionEntry *p ) const = 0;
 
@@ -220,6 +223,9 @@ public:
 	virtual void cancelAndRefundAllProduction() override;									///< cancel and refund anything in the production queue
 
 	virtual UnsignedInt getProductionCount() const override { return m_productionCount; }    ///< return # of things in the production queue
+	/// TheSuperHackers @feature (Zero Hour side stacks identical units into one button; the
+	/// original Generals queue has no stacking, so every entry is its own button)
+	virtual UnsignedInt getQueueButtonCount() const override { return m_productionCount; }
 
 	// walking the production list from outside
 	virtual const ProductionEntry *firstProduction() const override { return m_productionQueue; }

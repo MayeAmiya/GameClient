@@ -286,6 +286,33 @@ Bool ParkingPlaceBehavior::shouldReserveDoorWhenQueued(const ThingTemplate* thin
 
 //-------------------------------------------------------------------------------------------------
 // note: called from client, so MUST NOT modify self in any way, or desyncs will occur
+Int ParkingPlaceBehavior::getOccupiedSpaceCount() const
+{
+	// TheSuperHackers @feature how many parking spaces are unavailable right now: one holding
+	// a live object, or one already reserved for a unit that is on its way out. The queue may
+	// only hold (getSpaceCount() - this) further orders.
+	Int occupied = 0;
+
+	for( std::vector<ParkingPlaceInfo>::const_iterator it = m_spaces.begin(); it != m_spaces.end(); ++it )
+	{
+		if( it->m_reservedForExit )
+		{
+			++occupied;
+			continue;
+		}
+
+		if( it->m_objectInSpace == INVALID_ID )
+			continue;
+
+		// since this is const we cannot purge dead entries, just peek (see hasAvailableSpaceFor)
+		Object *obj = TheGameLogic ? TheGameLogic->findObjectByID( it->m_objectInSpace ) : nullptr;
+		if( obj != nullptr && obj->isEffectivelyDead() == FALSE )
+			++occupied;
+	}
+
+	return occupied;
+}
+
 Bool ParkingPlaceBehavior::hasAvailableSpaceFor(const ThingTemplate* thing) const
 {
 	if (!m_gotInfo)	// degenerate case, shouldn't happen, but just in case...

@@ -785,6 +785,8 @@ public:
 	void triggerRadarAttackGlow();
 
 	void drawSpecialPowerShortcutMultiplierText();
+	static void queueButtonDrawFunc( GameWindow *window, WinInstanceData *instData );	///< TheSuperHackers @feature draws the button then the big count on top
+	static void (*s_originalQueueDraw)( GameWindow *, WinInstanceData * );	///< TheSuperHackers @feature saved default painter of the queue buttons
 
 protected:
 	void updateRadarAttackGlow ();
@@ -927,6 +929,7 @@ protected:
 	GameWindow *m_specialPowerShortcutButtons[ MAX_SPECIAL_POWER_SHORTCUTS ];
 	GameWindow *m_specialPowerShortcutButtonParents[ MAX_SPECIAL_POWER_SHORTCUTS ];
 	DisplayString *m_shortcutDisplayStrings[ MAX_SPECIAL_POWER_SHORTCUTS ];
+	DisplayString *m_queueCountDisplayStrings[ MAX_BUILD_QUEUE_BUTTONS ];	///< TheSuperHackers @feature big count numbers for the build queue
 	Int m_currentlyUsedSpecialPowersButtons; ///< Value will be <= MAX_SPECIAL_POWER_SHORTCUTS;
 
 
@@ -964,6 +967,7 @@ protected:
 			ProductionID productionID;										///< production id for unit productions
 			const UpgradeTemplate *upgradeToResearch;			///< upgrade template for upgrade productions
 		};
+		Int stackCount;													///< TheSuperHackers @feature units represented by this stacked button (0/1 = no count shown)
 
 	};
 	QueueEntry m_queueData[ MAX_BUILD_QUEUE_BUTTONS ];	///< what the build queue represents
