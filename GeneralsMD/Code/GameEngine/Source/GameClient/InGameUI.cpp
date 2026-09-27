@@ -930,6 +930,22 @@ const FieldParse InGameUI::s_fieldParseTable[] =
 	{ "RenderFpsDropColor",     INI::parseColorInt,     nullptr, offsetof(InGameUI, m_renderFpsDropColor) },
 	{ "RenderFpsRefreshMs",     INI::parseUnsignedInt,  nullptr, offsetof(InGameUI, m_renderFpsRefreshMs) },
 
+	{ "LogicFpsFont",           INI::parseAsciiString,  nullptr, offsetof(InGameUI, m_logicFpsFont) },
+	{ "LogicFpsFontSize",       INI::parseInt,          nullptr, offsetof(InGameUI, m_logicFpsPointSize) },
+	{ "LogicFpsBold",           INI::parseBool,         nullptr, offsetof(InGameUI, m_logicFpsBold) },
+	{ "LogicFpsPosition",       INI::parseCoord2D,      nullptr, offsetof(InGameUI, m_logicFpsPosition) },
+	{ "LogicFpsColor",          INI::parseColorInt,     nullptr, offsetof(InGameUI, m_logicFpsColor) },
+	{ "LogicFpsDropColor",      INI::parseColorInt,     nullptr, offsetof(InGameUI, m_logicFpsDropColor) },
+	{ "LogicFpsRefreshMs",      INI::parseUnsignedInt,  nullptr, offsetof(InGameUI, m_logicFpsRefreshMs) },
+
+	{ "UserInfoFont",           INI::parseAsciiString,  nullptr, offsetof(InGameUI, m_userInfoFont) },
+	{ "UserInfoFontSize",       INI::parseInt,          nullptr, offsetof(InGameUI, m_userInfoPointSize) },
+	{ "UserInfoBold",           INI::parseBool,         nullptr, offsetof(InGameUI, m_userInfoBold) },
+	{ "UserInfoPosition",       INI::parseCoord2D,      nullptr, offsetof(InGameUI, m_userInfoPosition) },
+	{ "UserInfoColor",          INI::parseColorInt,     nullptr, offsetof(InGameUI, m_userInfoColor) },
+	{ "UserInfoDropColor",      INI::parseColorInt,     nullptr, offsetof(InGameUI, m_userInfoDropColor) },
+	{ "UserInfoLineOffset",     INI::parseInt,          nullptr, offsetof(InGameUI, m_userInfoLineOffset) },
+
 	{ "SystemTimeFont",         INI::parseAsciiString,  nullptr, offsetof(InGameUI, m_systemTimeFont) },
 	{ "SystemTimeBold",         INI::parseBool,         nullptr, offsetof(InGameUI, m_systemTimeBold) },
 	{ "SystemTimePosition",     INI::parseCoord2D,      nullptr, offsetof(InGameUI, m_systemTimePosition) },
@@ -1189,6 +1205,31 @@ InGameUI::InGameUI()
 	m_lastRenderFps = ~0u;
 	m_lastRenderFpsLimit = ~0u;
 	m_lastRenderFpsUpdateMs = 0u;
+
+	m_logicFpsString = nullptr;
+	m_logicFpsFont = "Tahoma";
+	m_logicFpsPointSize = TheGlobalData->m_renderFpsFontSize;
+	m_logicFpsBold = TRUE;
+	m_logicFpsPosition.x = kHudAnchorX;
+	m_logicFpsPosition.y = kHudAnchorY;
+	m_logicFpsColor = GameMakeColor(255, 64, 64, 255);
+	m_logicFpsDropColor = GameMakeColor(0, 0, 0, 255);
+	m_logicFpsRefreshMs = 1000;
+	m_lastLogicFps = ~0u;
+	m_lastLogicFpsUpdateMs = 0u;
+	m_lastLogicFrame = 0u;
+
+	// TheSuperHackers @feature second HUD line: current time + local user name
+	m_userInfoString = nullptr;
+	m_lastUserInfoUpdateMs = 0u;
+	m_userInfoFont = "Tahoma";
+	m_userInfoPointSize = TheGlobalData->m_renderFpsFontSize;
+	m_userInfoBold = TRUE;
+	m_userInfoPosition.x = kHudAnchorX;
+	m_userInfoPosition.y = kHudAnchorY;
+	m_userInfoColor = GameMakeColor(255, 255, 255, 255);
+	m_userInfoDropColor = GameMakeColor(0, 0, 0, 255);
+	m_userInfoLineOffset = 0; // 0 = derive from the font size (point size + 6)
 
 	m_systemTimeString = nullptr;
 	m_systemTimeFont = "Tahoma";
@@ -2520,6 +2561,10 @@ void InGameUI::freeCustomUiResources()
 	m_renderFpsString = nullptr;
 	TheDisplayStringManager->freeDisplayString(m_renderFpsLimitString);
 	m_renderFpsLimitString = nullptr;
+	TheDisplayStringManager->freeDisplayString(m_logicFpsString);
+	m_logicFpsString = nullptr;
+	TheDisplayStringManager->freeDisplayString(m_userInfoString);
+	m_userInfoString = nullptr;
 	TheDisplayStringManager->freeDisplayString(m_systemTimeString);
 	m_systemTimeString = nullptr;
 	TheDisplayStringManager->freeDisplayString(m_gameTimeString);
@@ -4022,6 +4067,16 @@ void InGameUI::postWindowDraw()
 	Int hudOffsetX = 0;
 	Int hudOffsetY = 0;
 
+	// TheSuperHackers @info HUD anchor layout is:
+	//   逻辑帧 [目标逻辑帧率] - [延迟 - 延迟帧] 渲染帧 [目标渲染帧率]
+	//   e.g.   8        [60]   -  [96ms - 6]     60       [180]
+	// The measured logic frame rate is drawn first, then the network latency counter supplies the
+	// target logic frame rate followed by the command latency, then the render frame rate counter.
+	if (m_logicFpsPointSize > 0)
+	{
+		drawLogicFps(hudOffsetX, hudOffsetY);
+	}
+
 	if (m_networkLatencyPointSize > 0 && TheGameLogic->isInMultiplayerGame())
 	{
 		drawNetworkLatency(hudOffsetX, hudOffsetY);
@@ -4035,6 +4090,13 @@ void InGameUI::postWindowDraw()
 	if (m_systemTimePointSize > 0)
 	{
 		drawSystemTime(hudOffsetX, hudOffsetY);
+	}
+
+	// TheSuperHackers @feature second HUD line: current time and the local user name.
+	// Only shown while actually in a match, not in the shell/menu screens.
+	if ((m_userInfoPointSize > 0) && !TheGameLogic->isInShellGame() && TheGameLogic->isInGame())
+	{
+		drawUserInfo(hudOffsetX, hudOffsetY);
 	}
 
 	if ((m_gameTimePointSize > 0) && !TheGameLogic->isInShellGame() && TheGameLogic->isInGame())
@@ -4072,6 +4134,23 @@ void InGameUI::postDraw()
 
 		x = m_messagePosition.x;
 		y = m_messagePosition.y;
+
+		// TheSuperHackers @info The second HUD line (current time + user name) is drawn at the top
+		// left corner, so push the chat and hint text below it, otherwise it gets covered.
+		// A custom MessagePosition that already sits lower than that is left untouched.
+		if (m_userInfoPointSize > 0 && !TheGameLogic->isInShellGame() && TheGameLogic->isInGame())
+		{
+			const Int lineOffset = (m_userInfoLineOffset > 0) ? m_userInfoLineOffset : (m_userInfoPointSize + 6);
+			// TheSuperHackers @info Second HUD line bottom, plus a 40px drop so the text clears it
+			// comfortably instead of sitting right under it.
+			const Int userInfoBottom = kHudAnchorY + lineOffset + m_userInfoPointSize + 8;
+			const Int minY = userInfoBottom + 40;
+			if (y < minY)
+			{
+				y = minY;
+			}
+		}
+
 		for (i = MAX_UI_MESSAGES - 1; i >= 0; i--)
 		{
 
@@ -7031,6 +7110,8 @@ void InGameUI::refreshCustomUiResources(void)
 {
 	refreshNetworkLatencyResources();
 	refreshRenderFpsResources();
+	refreshLogicFpsResources();
+	refreshUserInfoResources();
 	refreshSystemTimeResources();
     refreshGameTimeResources();
     initObserverOverlay();
@@ -7076,6 +7157,33 @@ void InGameUI::refreshRenderFpsResources()
 	{
 		updateRenderFpsString();
 	}
+}
+
+void InGameUI::refreshLogicFpsResources()
+{
+	if (!m_logicFpsString)
+	{
+		m_logicFpsString = TheDisplayStringManager->newDisplayString();
+		m_lastLogicFps = ~0u;
+		m_lastLogicFpsUpdateMs = 0u;
+		m_lastLogicFrame = 0u;
+	}
+
+	Int adjustedLogicFpsFontSize = TheGlobalLanguageData->adjustFontSize(m_logicFpsPointSize);
+	GameFont* fpsFont = TheWindowManager->winFindFont(m_logicFpsFont, adjustedLogicFpsFontSize, m_logicFpsBold);
+	m_logicFpsString->setFont(fpsFont);
+}
+
+void InGameUI::refreshUserInfoResources()
+{
+	if (!m_userInfoString)
+	{
+		m_userInfoString = TheDisplayStringManager->newDisplayString();
+	}
+
+	Int adjustedUserInfoFontSize = TheGlobalLanguageData->adjustFontSize(m_userInfoPointSize);
+	GameFont* font = TheWindowManager->winFindFont(m_userInfoFont, adjustedUserInfoFontSize, m_userInfoBold);
+	m_userInfoString->setFont(font);
 }
 
 void InGameUI::refreshSystemTimeResources()
@@ -7282,6 +7390,148 @@ void InGameUI::drawRenderFps(Int& x, Int& y)
 	{
 		m_renderFpsString->draw(m_renderFpsPosition.x, m_renderFpsPosition.y, m_renderFpsColor, m_renderFpsDropColor);
 		m_renderFpsLimitString->draw(m_renderFpsPosition.x + m_renderFpsString->getWidth(), m_renderFpsPosition.y, m_renderFpsLimitColor, m_renderFpsDropColor);
+	}
+}
+
+void InGameUI::updateLogicFpsString()
+{
+	// TheSuperHackers @feature Displays the *measured* game logic frame rate (逻辑帧), which is the
+	// leading number of the HUD anchor. The value in brackets that follows it (drawn by the network
+	// latency counter) is the *target* logic frame rate (目标逻辑帧率), which the packet router (host)
+	// negotiates from the slowest render frame rate in the room and broadcasts to everyone.
+	// This number is derived from how many logic frames the simulation actually advances per second.
+	// In a network game it is bounded by the slowest player's render frame rate, because each render
+	// frame can advance at most one logic frame (lockstep).
+	if (TheGameLogic == nullptr)
+	{
+		return;
+	}
+
+	const UnsignedInt logicFpsRefreshMs = (m_logicFpsRefreshMs > 0u) ? m_logicFpsRefreshMs : 1000u;
+	const UnsignedInt nowMs = timeGetTime();
+	const UnsignedInt currentFrame = TheGameLogic->getFrame();
+
+	if (m_lastLogicFpsUpdateMs == 0u)
+	{
+		m_lastLogicFpsUpdateMs = nowMs;
+		m_lastLogicFrame = currentFrame;
+		return;
+	}
+
+	const UnsignedInt deltaMs = nowMs - m_lastLogicFpsUpdateMs;
+	if (deltaMs < logicFpsRefreshMs)
+	{
+		return;
+	}
+
+	// The frame counter resets when a new game starts. Guard against unsigned underflow.
+	if (currentFrame < m_lastLogicFrame)
+	{
+		m_lastLogicFpsUpdateMs = nowMs;
+		m_lastLogicFrame = currentFrame;
+		return;
+	}
+
+	const UnsignedInt frameDelta = currentFrame - m_lastLogicFrame;
+	const UnsignedInt logicFps = (frameDelta * 1000u) / deltaMs;
+
+	if (logicFps != m_lastLogicFps)
+	{
+		UnicodeString fpsStr;
+		// TheSuperHackers @info No prefix here, this is the leading number of the HUD anchor:
+		//   逻辑帧 [目标逻辑帧率] - [延迟 - 延迟帧] 渲染帧 [目标渲染帧率]
+		fpsStr.format(L"%u", logicFps);
+		m_logicFpsString->setText(fpsStr);
+		m_lastLogicFps = logicFps;
+	}
+
+	m_lastLogicFpsUpdateMs = nowMs;
+	m_lastLogicFrame = currentFrame;
+}
+
+void InGameUI::drawLogicFps(Int& x, Int& y)
+{
+	updateLogicFpsString();
+
+	// TheSuperHackers @info at the HUD anchor this draws inline and advances x otherwise uses configured position
+	if (isAtHudAnchorPos(m_logicFpsPosition))
+	{
+		m_logicFpsString->draw(kHudAnchorX + x, kHudAnchorY + y, m_logicFpsColor, m_logicFpsDropColor);
+		x += m_logicFpsString->getWidth() + kHudGapPx;
+	}
+	else
+	{
+		m_logicFpsString->draw(m_logicFpsPosition.x, m_logicFpsPosition.y, m_logicFpsColor, m_logicFpsDropColor);
+	}
+}
+
+// TheSuperHackers @feature Resolves the display name of the local user.
+// Preference order: the Generals Online account name, then the local player name from the game.
+static UnicodeString GetLocalUserNameString()
+{
+#if defined(GENERALS_ONLINE)
+	NGMP_OnlineServices_AuthInterface* pAuthInterface = NGMP_OnlineServicesManager::GetInterface<NGMP_OnlineServices_AuthInterface>();
+	if (pAuthInterface != nullptr)
+	{
+		const std::wstring displayName = pAuthInterface->GetDisplayNameW();
+		// "NO_USER" is the placeholder used before the account is resolved.
+		if (!displayName.empty() && displayName != L"NO_USER")
+		{
+			return UnicodeString(displayName.c_str());
+		}
+	}
+#endif
+
+	if (ThePlayerList != nullptr)
+	{
+		Player* localPlayer = ThePlayerList->getLocalPlayer();
+		if (localPlayer != nullptr && !localPlayer->getPlayerDisplayName().isEmpty())
+		{
+			return localPlayer->getPlayerDisplayName();
+		}
+	}
+
+	return UnicodeString(L"Unknown");
+}
+
+void InGameUI::updateUserInfoString()
+{
+	// TheSuperHackers @bugfix throttle the rebuild of this string: it used to run every
+	// render frame, doing GetLocalTime, a name lookup that returns a std::wstring and two
+	// UnicodeString allocations per frame. The display granularity is seconds, refreshing
+	// twice a second is visually identical and removes the per-frame churn.
+	const UnsignedInt nowMs = timeGetTime();
+	if (m_lastUserInfoUpdateMs != 0u && (nowMs - m_lastUserInfoUpdateMs) < 500u)
+		return;
+	m_lastUserInfoUpdateMs = nowMs;
+
+	SYSTEMTIME systemTime;
+	GetLocalTime(&systemTime);
+
+	UnicodeString infoStr;
+	infoStr.format(L"%2.2d:%2.2d:%2.2d  ", systemTime.wHour, systemTime.wMinute, systemTime.wSecond);
+	infoStr.concat(GetLocalUserNameString());
+
+	m_userInfoString->setText(infoStr);
+}
+
+void InGameUI::drawUserInfo(Int& x, Int& y)
+{
+	updateUserInfoString();
+
+	// TheSuperHackers @info at the HUD anchor this starts a new row below the first HUD line,
+	// so it draws at the left edge instead of continuing after the first line.
+	if (isAtHudAnchorPos(m_userInfoPosition))
+	{
+		// Default row height: the glyph height of the chosen font size plus comfortable
+		// leading, so the second HUD line does not crowd the first one.
+		const Int lineOffset = (m_userInfoLineOffset > 0) ? m_userInfoLineOffset : (m_userInfoPointSize + 20);
+		m_userInfoString->draw(kHudAnchorX, kHudAnchorY + y + lineOffset, m_userInfoColor, m_userInfoDropColor);
+		x = 0;
+	}
+	else
+	{
+		m_userInfoString->draw(m_userInfoPosition.x, m_userInfoPosition.y, m_userInfoColor, m_userInfoDropColor);
 	}
 }
 

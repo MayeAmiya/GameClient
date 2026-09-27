@@ -39,6 +39,10 @@ static void drawFramerateBar();
 #include <windows.h>
 #include <io.h>
 #include <time.h>
+// TheSuperHackers @feature Used to ask the system which GPU is the high performance one.
+// Only used through dynamically loaded dxgi.dll, so this adds no link dependency.
+#include <dxgi.h>
+#include <dxgi1_6.h>
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/FramePacer.h"
@@ -86,6 +90,7 @@ static void drawFramerateBar();
 #include "WWMath/wwmath.h"
 #include "WWLib/registry.h"
 #include "WW3D2/ww3d.h"
+#include "WW3D2/texturefilter.h"
 #include "WW3D2/predlod.h"
 #include "WW3D2/part_emt.h"
 #include "WW3D2/part_ldr.h"

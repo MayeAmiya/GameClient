@@ -588,6 +588,8 @@ public:  // ********************************************************************
 	virtual void refreshCustomUiResources();
 	virtual void refreshNetworkLatencyResources();
 	virtual void refreshRenderFpsResources();
+	virtual void refreshLogicFpsResources();
+	virtual void refreshUserInfoResources();
 	virtual void refreshSystemTimeResources();
 	virtual void refreshGameTimeResources();
 	virtual void refreshPlayerInfoListResources();
@@ -613,6 +615,10 @@ private:
 	void updateRenderFpsString();
 	void drawNetworkLatency(Int& x, Int& y);
 	void drawRenderFps(Int& x, Int& y);
+	void updateLogicFpsString();
+	void drawLogicFps(Int& x, Int& y);
+	void updateUserInfoString();
+	void drawUserInfo(Int& x, Int& y);
 	void drawSystemTime(Int& x, Int& y);
 	void drawGameTime();
 	void drawPlayerInfoList();
@@ -848,6 +854,30 @@ protected:
 	UnsignedInt									m_lastRenderFps;
 	UnsignedInt									m_lastRenderFpsLimit;
 	UnsignedInt									m_lastRenderFpsUpdateMs;
+
+	// Logic FPS Counter (measured game logic frames per second)
+	DisplayString* m_logicFpsString;
+	AsciiString									m_logicFpsFont;
+	Int													m_logicFpsPointSize;
+	Bool												m_logicFpsBold;
+	Coord2D											m_logicFpsPosition;
+	Color												m_logicFpsColor;
+	Color												m_logicFpsDropColor;
+	UnsignedInt									m_logicFpsRefreshMs;
+	UnsignedInt									m_lastLogicFps;
+	UnsignedInt									m_lastLogicFpsUpdateMs;
+	UnsignedInt									m_lastLogicFrame;
+
+	// User Info (second HUD line: current time + local user name)
+	DisplayString* m_userInfoString;
+	AsciiString									m_userInfoFont;
+	Int													m_userInfoPointSize;
+	Bool												m_userInfoBold;
+	Coord2D											m_userInfoPosition;
+	Color												m_userInfoColor;
+	Color												m_userInfoDropColor;
+	Int													m_userInfoLineOffset;
+	UnsignedInt									m_lastUserInfoUpdateMs;
 
 	// System Time
 	DisplayString* m_systemTimeString;

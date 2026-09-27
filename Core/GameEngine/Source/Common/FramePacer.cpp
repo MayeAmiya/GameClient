@@ -55,7 +55,16 @@ void FramePacer::update()
 	// TheSuperHackers @bugfix xezon 05/08/2025 Re-implements the frame rate limiter
 	// with higher resolution counters to cap the frame rate more accurately to the desired limit.
 	const UnsignedInt maxFps = getActualFramesPerSecondLimit();// allowFpsLimit ? getFramesPerSecondLimit() : RenderFpsPreset::UncappedFpsValue;
+
+	// TEMP DIAGNOSTIC (frame pacing) -- remove after use
+	const Int64 diagBefore = FramePerfDiagQPC();
+	static Int64 s_lastUpdateEnd = 0;
 	m_updateTime = m_frameRateLimit.wait(maxFps);
+	const Int64 diagAfter = FramePerfDiagQPC();
+	const double waitMs = FramePerfDiagMs(diagBefore, diagAfter);
+	const double frameMs = (s_lastUpdateEnd != 0) ? FramePerfDiagMs(s_lastUpdateEnd, diagAfter) : 0.0;
+	s_lastUpdateEnd = diagAfter;
+	FramePerfDiagEmit(frameMs, waitMs);
 }
 
 void FramePacer::reset()
@@ -200,6 +209,10 @@ Int FramePacer::getActualLogicTimeScaleFps(LogicTimeQueryFlags flags) const
 	}
 
 	// Returns uncapped value to align with the render update as per the original game behavior.
+	// TheSuperHackers @info The logic rate is user-configurable (speed tiers, challenge mode
+	// default). Animations need no extra scaling: they advance by the WW3D logic game-time
+	// clock (see Animatable3DObjClass::Compute_Current_Frame), which is fed with
+	// getLogicTimeStepMilliseconds() and therefore tracks the simulation at any rate.
 	return RenderFpsPreset::UncappedFpsValue;
 }
 
