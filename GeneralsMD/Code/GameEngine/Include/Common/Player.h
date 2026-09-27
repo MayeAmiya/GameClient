@@ -624,6 +624,12 @@ public:
 
 	Bool didPlayerPreorder() const { return m_isPreorder; }
 
+	// TheSuperHackers @feature per-player drag-select economy filter state. Lives logic-side
+	// (lockstep) so every machine applies the same filter when re-deriving a player's drag
+	// selection from the synced selection region.
+	Bool isDragSelectEconomyFilterEnabled() const { return m_dragSelectEconomyFilterEnabled; }
+	void setDragSelectEconomyFilter(Bool enabled) { m_dragSelectEconomyFilterEnabled = enabled; }
+
 	/// Grab the scorekeeper so we can score up in here!
 	ScoreKeeper* getScoreKeeper() { return &m_scoreKeeper; }
 
@@ -793,6 +799,7 @@ private:
 	Bool									m_canBuildBase;			///< whether the current player is allowed to build Base buildings
 	Bool									m_observer;
 	Bool									m_isPreorder;
+	Bool									m_dragSelectEconomyFilterEnabled;	///< TheSuperHackers @feature per-player drag-select economy filter (synced)
 	Real									m_skillPointsModifier;	///< Multiplied by skill points before they are applied
 
 	Bool									m_listInScoreScreen;	///< should this player be listed in the score screen or not.

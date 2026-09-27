@@ -213,6 +213,7 @@ public:
 		MSG_META_VIEW_TEAM9,												///< center view on given user-defined team (but do not affect selection)
 
 		MSG_META_SELECT_MATCHING_UNITS,              ///< selects matching units, used for both on screen and across map
+		MSG_META_TOGGLE_DRAG_SELECT_FILTER,          ///< toggle client-side drag-select exclusion of economy/support units
 		MSG_META_SELECT_NEXT_UNIT,									///< select 'next' unit
 		MSG_META_SELECT_PREV_UNIT,									///< select 'prev' unit
 		MSG_META_SELECT_NEXT_WORKER,                ///< select 'next' worker
@@ -609,6 +610,7 @@ public:
 		MSG_LOGIC_CRC,															///< CRC from the logic passed around in a network game :)
 		MSG_SET_MINE_CLEARING_DETAIL,								///< CRC from the logic passed around in a network game :)
 		MSG_ENABLE_RETALIATION_MODE,								///< Turn retaliation mode on or off.
+		MSG_SET_DRAG_SELECT_FILTER,									///< TheSuperHackers @feature set the synced drag-select economy filter state (broadcast so all machines stay consistent)
 		MSG_DOZER_WAYPOINT_BUILD,									///< TheSuperHackers @feature like MSG_DOZER_CONSTRUCT, but queues the construction while in waypoint mode (builder builds it after finishing its current path/tasks). NOTE: new network messages must be appended at the END of this enum, before the debug block, to keep the IDs of all existing messages stable.
 
 		MSG_BEGIN_DEBUG_NETWORK_MESSAGES = 1900,		///< network messages that exist only in debug/internal builds. all grouped separately.

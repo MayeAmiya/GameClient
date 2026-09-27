@@ -33,6 +33,7 @@
 #include "Common/GameEngine.h"
 #include "Common/MessageStream.h"
 #include "Common/MiscAudio.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
 #include "Common/ThingTemplate.h"
@@ -110,6 +111,16 @@ struct SFWRec
 }
 
 //-----------------------------------------------------------------------------
+// TheSuperHackers @feature Client-side drag-select exclusion of economy units.
+// Blocked: workers/dozers (DOZER) and harvesters/supply trucks (HARVESTER) only.
+// This is purely a local UI filter; it does not affect game logic or determinism.
+static Bool IsDragSelectEconomyFiltered( const Object *obj )
+{
+	return obj->isKindOf( KINDOF_DOZER ) ||
+				 obj->isKindOf( KINDOF_HARVESTER );
+}
+
+//-----------------------------------------------------------------------------
 /**
  * Returns true if the drawable can be selected under the current rules
  * of the system
@@ -165,21 +176,17 @@ Bool CanSelectDrawable( const Drawable *draw, Bool dragSelecting )
 		window = window->winGetParent();
 	}
 
+	// TheSuperHackers @feature Structures can now be drag selected like any other unit.
+	// The vanilla gate below was removed: dragging a box over several buildings (defenses,
+	// production structures) must select them all so they can be commanded as a group and so
+	// production queues can be distributed across them (see GameLogic::onQueueUnitCreate).
+	// The multi select context UI handles shared commands, and an empty common command set
+	// simply shows no buttons.
 	//
-	// structures cannot be selected by a drag select, you must individually pick them
-	// NOTE that this is really a convenience for the multi select context sensitive UI,
-	// later we might want to allow you to drag select buildings if only one building is
-	// actually in the selection area, but don't forget complications like holding down
-	// a key to "add" to an already existing selection list
-	//
-	// not allowing you to have multiple buildings selected drastically simplifies the
-	// user interface ... including all those context sensitive commands that we
-	// can just assume are for a single building selected.
-	//
-	if( dragSelecting && draw->isKindOf( KINDOF_STRUCTURE ) )
-	{
-		return FALSE;
-	}
+	// if( dragSelecting && draw->isKindOf( KINDOF_STRUCTURE ) )
+	// {
+	// 	return FALSE;
+	// }
 
 	// You cannot select something that has a logic override of unselectability or masked
 	if( obj->getStatusBits().testForAny( MAKE_OBJECT_STATUS_MASK2( OBJECT_STATUS_UNSELECTABLE, OBJECT_STATUS_MASKED ) ) )
@@ -740,6 +747,30 @@ GameMessageDisposition SelectionTranslator::onMouseLeftClick(MAYBE_UNUSED const 
 	pds.isPointSelection = isPoint;
 	TheTacticalView->iterateDrawablesInRegion(&selectionRegion, addDrawableToList, &pds);
 
+	// TheSuperHackers @feature Drag-select economy/support unit filter: when the ORIGIN
+	// player of this selection has the filter enabled and this is a drag box (not a
+	// single point pick), remove excluded units from the candidate list before any
+	// selection logic (SelectionInfo counting, context commands, group creation) runs,
+	// so the whole path treats them as absent. A single click on such a unit still
+	// selects it intentionally. The flag is per-player and synced (MSG_SET_DRAG_SELECT_FILTER),
+	// so every machine erases the same units when re-deriving another player's drag box.
+	Player *dragOriginPlayer = ThePlayerList->getNthPlayer(msg->getPlayerIndex());
+	if (!isPoint && dragOriginPlayer && dragOriginPlayer->isDragSelectEconomyFilterEnabled())
+	{
+		// Single pass over the candidates: this runs before any selection logic
+		// (SelectionInfo counting, context commands, group creation) so the whole
+		// path treats excluded units as absent. A single click on such a unit still
+		// selects it intentionally (guarded by !isPoint above).
+		for (DrawableListIt it = drawablesThatWillSelect.begin(); it != drawablesThatWillSelect.end(); )
+		{
+			Drawable *draw = *it;
+			if (draw && draw->getObject() && IsDragSelectEconomyFiltered(draw->getObject()))
+				it = drawablesThatWillSelect.erase(it);
+			else
+				++it;
+		}
+	}
+
 	if (drawablesThatWillSelect.empty())
 	{
 		return KEEP_MESSAGE;
@@ -768,8 +799,12 @@ GameMessageDisposition SelectionTranslator::onMouseLeftClick(MAYBE_UNUSED const 
 	if (si.currentCountEnemies > 0 ||
 			si.currentCountCivilians > 0 ||
 			si.currentCountFriends > 0 ||
-			si.currentCountMineBuildings > 0)
+			( si.currentCountMineBuildings > 0 && !TheInGameUI->isInPreferSelectionMode() ) )
 	{
+		// TheSuperHackers @feature Shift+click appends buildings to the current selection:
+		// a current selection that already contains my buildings no longer forces a brand-new
+		// group while prefer-selection (Shift) is active. Vanilla replace behaviour without
+		// Shift is untouched.
 		// force a new group creation
 		addToGroup = FALSE;
 	}
@@ -782,7 +817,10 @@ GameMessageDisposition SelectionTranslator::onMouseLeftClick(MAYBE_UNUSED const 
 		// EXACTLY ONE CLICKED OR DRAGGED BUILDING
 		if ( si.newCountMineBuildings == 1 && si.newCountMine == 1 )
 		{
-			addToGroup = FALSE;
+			// TheSuperHackers @feature Shift+click on a single building appends it to the
+			// current selection (same as units) instead of always replacing the selection.
+			if (!TheInGameUI->isInPreferSelectionMode())
+				addToGroup = FALSE;
 			si.selectMineBuildings = TRUE;
 		}
 		else if ( si.newCountMineBuildings > 0 )////////////// SO SORRY, I KNOW THIS IS MICKEY MOUSE ///////////////////
@@ -840,6 +878,12 @@ GameMessageDisposition SelectionTranslator::onMouseLeftClick(MAYBE_UNUSED const 
 		addToGroup = FALSE;
 		si.selectFriends = TRUE;
 	}
+
+	// TheSuperHackers @feature With Shift (prefer selection) held, buildings picked by a
+	// click or a drag box are appended to the current selection as well, so the structures
+	// must not be filtered out of the append pass below.
+	if( addToGroup && si.newCountMineBuildings > 0 )
+		si.selectMineBuildings = TRUE;
 
 	// If we're not going to select anything, just bail now.
 	if (!(si.selectMine || si.selectEnemies || si.selectCivilians || si.selectFriends))

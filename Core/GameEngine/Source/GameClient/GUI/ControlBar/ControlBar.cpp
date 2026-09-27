@@ -1220,6 +1220,9 @@ void ControlBar::init()
 		{
 			setControlCommand(win, findCommandButton("NonCommand_IdleWorker") );
 			win->winSetTooltipFunc(commandButtonTooltip);
+			// TheSuperHackers @feature Make the idle-worker button check-like so it can
+			// visually stay "pushed down" as the persistent drag-select filter indicator.
+			GadgetButtonEnableCheckLike(win, TRUE, FALSE);
 		}
 		win = TheWindowManager->winGetWindowFromId(nullptr,TheNameKeyGenerator->nameToKey("ControlBar.wnd:ButtonPlaceBeacon"));
 		if(win)
@@ -1550,6 +1553,20 @@ void ControlBar::update()
 			{
 				win->winEnable(FALSE);
 			}
+		}
+	}
+
+	// TheSuperHackers @feature Keep the idle-worker button visually "pushed down" while
+	// the LOCAL player's drag-select economy filter is enabled, as a persistent indicator
+	// of the mode (the flag is per-player and synced). Uses the check-like selected state
+	// so the pushed look also shows when the button is disabled (no idle workers).
+	{
+		static NameKeyType idleWorkerIndicatorButtonID = NAMEKEY("ControlBar.wnd:ButtonIdleWorker");
+		GameWindow *idleWorkerIndicatorButton = TheWindowManager->winGetWindowFromId(nullptr, idleWorkerIndicatorButtonID);
+		Player *localPlayer = ThePlayerList ? ThePlayerList->getLocalPlayer() : nullptr;
+		if (idleWorkerIndicatorButton && localPlayer)
+		{
+			GadgetCheckLikeButtonSetVisualCheck(idleWorkerIndicatorButton, localPlayer->isDragSelectEconomyFilterEnabled());
 		}
 	}
 

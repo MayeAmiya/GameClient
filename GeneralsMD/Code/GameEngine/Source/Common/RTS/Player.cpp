@@ -300,6 +300,7 @@ Player::Player( Int playerIndex )
 {
 	m_isPreorder = FALSE;
 	m_isPlayerDead = FALSE;
+	m_dragSelectEconomyFilterEnabled = FALSE;		// TheSuperHackers @feature per-player drag-select economy filter
 
 	m_playerIndex = playerIndex;
 
@@ -4053,13 +4054,14 @@ void Player::crc( Xfer *xfer )
 	* 6: Store m_unitsShouldHunt, set to true after the script "Tell player to hunt" is called.
 	* 7: added Preorder flag
 	* 8: Save m_disabledSciences & m_hiddenSciences. jba.
+	* 9: Save m_dragSelectEconomyFilterEnabled (per-player drag-select economy filter).
 	*/
 // ------------------------------------------------------------------------------------------------
 void Player::xfer( Xfer *xfer )
 {
 
 	// version
-	const XferVersion currentVersion = 8;
+	const XferVersion currentVersion = 9;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -4083,6 +4085,13 @@ void Player::xfer( Xfer *xfer )
 	{
 		xfer->xferScienceVec(&m_sciencesDisabled);
 		xfer->xferScienceVec(&m_sciencesHidden);
+	}
+
+	if (version >= 9)
+	{
+		// TheSuperHackers @feature persist the per-player drag-select economy filter
+		// (set in-game via the synced MSG_SET_DRAG_SELECT_FILTER command).
+		xfer->xferBool( &m_dragSelectEconomyFilterEnabled );
 	}
 
 	// xfer upgrade instances

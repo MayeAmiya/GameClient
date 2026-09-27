@@ -130,6 +130,7 @@ static const LookupListRec GameMessageMetaTypeNames[] =
 	{ "VIEW_TEAM8",																GameMessage::MSG_META_VIEW_TEAM8 },
 	{ "VIEW_TEAM9",																GameMessage::MSG_META_VIEW_TEAM9 },
 	{ "SELECT_MATCHING_UNITS",										GameMessage::MSG_META_SELECT_MATCHING_UNITS },
+	{ "TOGGLE_DRAG_SELECT_FILTER",								GameMessage::MSG_META_TOGGLE_DRAG_SELECT_FILTER },
 	{ "SELECT_NEXT_UNIT",													GameMessage::MSG_META_SELECT_NEXT_UNIT },
 	{ "SELECT_PREV_UNIT",													GameMessage::MSG_META_SELECT_PREV_UNIT },
 	{ "SELECT_NEXT_WORKER",												GameMessage::MSG_META_SELECT_NEXT_WORKER },
@@ -893,6 +894,22 @@ void MetaMap::generateMetaMap()
 			map->m_transition = DOWN;
 			map->m_modState = SHIFT_CTRL;
 			map->m_usableIn = COMMANDUSABLE_EVERYWHERE;
+		}
+	}
+	{
+		// TheSuperHackers @feature Default binding (F3, moved from D) to toggle the client-side
+		// drag-select exclusion of economy/support units (workers, dozers, harvesters/supply
+		// trucks, sentry drones, listening outposts, radar vans). Only applies when the user
+		// hasn't overridden the mapping in Data\\INI\\CommandMap.
+		// Moved to F3 so the D key stays free and it sits with the other F-key selection
+		// helpers (F1 idle builders, F2 combat units).
+		MetaMapRec *map = getMetaMapRec(GameMessage::MSG_META_TOGGLE_DRAG_SELECT_FILTER);
+		if (map->m_key == MK_NONE)
+		{
+			map->m_key = MK_F3;
+			map->m_transition = DOWN;
+			map->m_modState = NONE;
+			map->m_usableIn = COMMANDUSABLE_GAME;
 		}
 	}
 	{

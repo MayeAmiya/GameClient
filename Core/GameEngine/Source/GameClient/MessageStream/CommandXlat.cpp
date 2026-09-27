@@ -2546,6 +2546,77 @@ GameMessage::Type CommandTranslator::evaluateContextCommand( Drawable *draw,
  * The Command Translator translates mouse events into object command messages
  * such as move_to, attack, etc.
  */
+// TheSuperHackers @feature shared selection helper for the F1/F2/F3 hotkeys.
+// SYNC NOTE: marking a drawable selected is client-only. What actually synchronises the
+// selection is the MSG_CREATE_SELECTED_GROUP message (exactly what a mouse drag sends) —
+// it rebuilds the logic-side selected group that every later attack/move command refers
+// to. First entry rebuilds the group (TRUE), the rest are added (FALSE).
+static void selectUnitsByFilter( Bool builders, Bool harvesters, Bool idleOnly )
+{
+	if( TheInGameUI == nullptr || TheGameClient == nullptr || TheMessageStream == nullptr )
+		return;
+
+	TheInGameUI->deselectAllDrawables();
+
+	Bool first = TRUE;
+	for( Drawable *draw = TheGameClient->firstDrawable(); draw != nullptr; draw = draw->getNextDrawable() )
+	{
+		Object *obj = draw->getObject();
+		if( obj == nullptr || !obj->isLocallyControlled() )
+			continue;
+
+		// same eligibility rules a mouse selection applies
+		if( !obj->isMobile() || obj->isContained() || obj->isKindOf( KINDOF_NO_SELECT ) )
+			continue;
+
+		const Bool isBuilder = obj->isKindOf( KINDOF_DOZER );
+		const Bool isHarvester = obj->isKindOf( KINDOF_HARVESTER );
+
+		if( builders && harvesters )
+		{
+			// F3: builders AND harvesters, nothing else
+			if( !isBuilder && !isHarvester )
+				continue;
+		}
+		else if( builders )
+		{
+			// F1: idle builders only
+			if( !isBuilder )
+				continue;
+			AIUpdateInterface *ai = obj->getAIUpdateInterface();
+			if( ai == nullptr || !ai->isIdle() )
+				continue;
+		}
+		else
+		{
+			// F2: combat units = everything except builders, harvesters and structures
+			if( isBuilder || isHarvester || obj->isKindOf( KINDOF_STRUCTURE ) )
+				continue;
+
+			// TheSuperHackers @feature when the drag-select economy filter is on (F3), F2
+			// also leaves out the special infantry: heroes (Burton/Kell/BlackLotus) and
+			// hackers (KINDOF_MONEY_HACKER). Pilots have no clean marker, so they stay
+			// selectable — per user decision.
+			const Player *localPlayer = ThePlayerList ? ThePlayerList->getLocalPlayer() : nullptr;
+			if( localPlayer != nullptr && localPlayer->isDragSelectEconomyFilterEnabled() &&
+					( obj->isKindOf( KINDOF_HERO ) || obj->isKindOf( KINDOF_MONEY_HACKER ) ) )
+				continue;
+		}
+
+		GameMessage *teamMsg = TheMessageStream->appendMessage( GameMessage::MSG_CREATE_SELECTED_GROUP );
+		teamMsg->appendBooleanArgument( first );
+		teamMsg->appendObjectIDArgument( obj->getID() );
+
+		TheInGameUI->selectDrawable( draw );
+		first = FALSE;
+
+		// TheSuperHackers @feature F1 picks just ONE idle builder, not all of them.
+		if( builders && !harvesters )
+			break;
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
 GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage *msg)
 {
 	GameMessage::Type t = msg->getType();
@@ -2569,6 +2640,26 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 		{
 
 			TheInGameUI->selectUnitsMatchingCurrentSelection();
+
+			disp = DESTROY_MESSAGE;
+			break;
+		}
+
+		//-----------------------------------------------------------------------------------------
+		case GameMessage::MSG_META_TOGGLE_DRAG_SELECT_FILTER:
+		{
+			// TheSuperHackers @feature Toggle the per-player drag-select economy filter.
+			// Only allowed while nothing is selected, so the key never interferes with
+			// giving orders to units. META messages are consumed locally and never
+			// broadcast, so we append the logic-level MSG_SET_DRAG_SELECT_FILTER instead;
+			// it goes over the network stamped with our player index and every machine
+			// applies it to OUR player state in lockstep - other players are unaffected.
+			if (TheInGameUI->getSelectCount() == 0)
+			{
+				Player *localPlayer = ThePlayerList->getLocalPlayer();
+				GameMessage *setMsg = TheMessageStream->appendMessage(GameMessage::MSG_SET_DRAG_SELECT_FILTER);
+				setMsg->appendBooleanArgument(!localPlayer->isDragSelectEconomyFilterEnabled());
+			}
 
 			disp = DESTROY_MESSAGE;
 			break;
@@ -3908,7 +3999,23 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
         {
             int key = msg->getArgument(0)->integer;
 
-            if (key == KEY_F11)
+            if (key == KEY_F1)
+            {
+                // TheSuperHackers @feature F1 selects all of my IDLE builders (dozers/workers).
+                selectUnitsByFilter( TRUE, FALSE, TRUE );
+                disp = DESTROY_MESSAGE;
+            }
+            else if (key == KEY_F2)
+            {
+                // TheSuperHackers @feature F2 selects ALL of my combat units — everything
+                // except builders (dozers/workers), harvesters and structures.
+                selectUnitsByFilter( FALSE, FALSE, FALSE );
+                disp = DESTROY_MESSAGE;
+            }
+            // NOTE: F3 is the drag-select economy filter toggle (moved from D) — handled as
+            // MSG_META_TOGGLE_DRAG_SELECT_FILTER, see MetaEvent.cpp. It is NOT a selection.
+
+            else if (key == KEY_F11)
             {
                 if (TheDisplay)
                     TheDisplay->takeScreenShot(SCREENSHOT_JPEG, TheGlobalData->m_jpegQuality);

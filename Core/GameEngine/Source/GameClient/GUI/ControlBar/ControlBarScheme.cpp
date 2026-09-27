@@ -456,6 +456,10 @@ void ControlBarScheme::init()
 		GadgetButtonSetHiliteImage(win, m_idleWorkerButtonHightlited);
 		GadgetButtonSetHiliteSelectedImage(win, m_idleWorkerButtonPushed);
 		GadgetButtonSetDisabledImage(win, m_idleWorkerButtonDisabled);
+		// TheSuperHackers @feature The drag-select filter indicator keeps this button in the
+		// "pushed" state even while it is disabled (no idle workers); without a dedicated
+		// disabled-selected image the button would render as empty in that state.
+		GadgetButtonSetDisabledSelectedImage(win, m_idleWorkerButtonPushed);
 
 		Int x, y;
 		GameWindow* parent =win->winGetParent();
