@@ -883,6 +883,13 @@ public:
 	// get method for list of commandbuttons
 	const CommandButton *getCommandButtons() { return m_commandButtons; }
 
+	// TheSuperHackers @bugfix Hot key lookup: return the command button window that is currently
+	// on the command bar and whose (localized) label marks the given letter with '&'. Several
+	// hundred command buttons share the same letter across the whole game, so a hot key must be
+	// resolved against the buttons the player can actually see right now and not against every
+	// window that ever carried that letter.
+	GameWindow *findCommandWindowByHotKey( const AsciiString& key ) const;
+
 protected:
 
 	ICoord2D m_defaultControlBarPosition;				///< Stored the original position of the control bar on the screen

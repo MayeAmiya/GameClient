@@ -2554,6 +2554,66 @@ void ControlBar::setControlCommand( GameWindow *button, const CommandButton *com
 }
 
 //-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @bugfix Resolve a hot key against what is on the command bar right now.
+	* Hundreds of command buttons share the same '&' letter across the whole game (the Chinese
+	* localization alone has two dozen different "&R" labels), so a hot key has to be resolved
+	* against the buttons the player can actually see at this moment. */
+//-------------------------------------------------------------------------------------------------
+GameWindow *ControlBar::findCommandWindowByHotKey( const AsciiString& key ) const
+{
+	if( key.isEmpty() || TheHotKeyManager == nullptr )
+		return nullptr;
+
+	AsciiString wanted = key;
+	wanted.toLower();
+
+	// Prefer a usable button; fall back to one that is displayed but greyed out so the caller
+	// can still give the "not available" feedback.
+	GameWindow *disabledMatch = nullptr;
+
+	for( Int i = 0; i < MAX_COMMANDS_PER_SET; i++ )
+	{
+		GameWindow *win = m_commandWindows[ i ];
+		if( win == nullptr )
+			continue;
+
+		// TheSuperHackers @bugfix The command windows belong to the command context parent and
+		// keep their last assigned command when another context (under construction, science
+		// purchase, ...) is showing. The parent being hidden does not change the children's own
+		// status, so the whole ancestor chain must be checked, otherwise a stale button of a
+		// hidden context can claim a hot key that belongs to the visible one.
+		Bool onScreen = TRUE;
+		for( GameWindow *ancestor = win; ancestor != nullptr; ancestor = ancestor->winGetParent() )
+		{
+			if( ancestor->winIsHidden() )
+			{
+				onScreen = FALSE;
+				break;
+			}
+		}
+		if( !onScreen )
+			continue;
+
+		const CommandButton *command = (const CommandButton *)GadgetButtonGetData( win );
+		if( command == nullptr )
+			continue;
+
+		AsciiString hotKey = TheHotKeyManager->searchHotKey( command->getTextLabel() );
+		hotKey.toLower();
+		if( hotKey != wanted )
+			continue;
+
+		if( BitIsSet( win->winGetStatus(), WIN_STATUS_ENABLED ) )
+			return win;
+
+		if( disabledMatch == nullptr )
+			disabledMatch = win;
+	}
+
+	return disabledMatch;
+}
+
+//-------------------------------------------------------------------------------------------------
 void CommandButton::cacheButtonImage()
 {
 	if (!TheMappedImageCollection) {

@@ -51,6 +51,12 @@
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// SYSTEM INCLUDES ////////////////////////////////////////////////////////////
+//-----------------------------------------------------------------------------
+#include <map>
+#include <vector>
+
+//-----------------------------------------------------------------------------
 // USER INCLUDES //////////////////////////////////////////////////////////////
 //-----------------------------------------------------------------------------
 #include "Common/SubsystemInterface.h"
@@ -99,7 +105,13 @@ public:
 	AsciiString searchHotKey( const UnicodeString& uStr );
 
 private:
-	typedef std::map<AsciiString, HotKey> HotKeyMap;
+	// TheSuperHackers @bugfix One letter can belong to many different command buttons (different
+	// command sets, science purchases, queue buttons, ...), and the same window has its command
+	// reassigned every time the command bar is repopulated. A single window per letter used to
+	// mean "whoever registered first owns this letter forever", so hot keys silently did nothing
+	// (the owning window was hidden) or triggered a command from another context. Keep every
+	// window that ever used a letter and let executeHotKey pick the one that is on screen.
+	typedef std::map<AsciiString, std::vector<HotKey>> HotKeyMap;
 	HotKeyMap m_hotKeyMap;
 };
 extern HotKeyManager *TheHotKeyManager;

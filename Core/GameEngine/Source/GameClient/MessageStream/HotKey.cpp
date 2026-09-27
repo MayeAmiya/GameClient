@@ -56,6 +56,8 @@
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/Keyboard.h"
+#include "GameClient/InGameUI.h"
+#include "GameClient/ControlBar.h"
 #include "GameClient/GameText.h"
 #include "Common/AudioEventRTS.h"
 //-----------------------------------------------------------------------------
@@ -87,15 +89,16 @@ GameMessageDisposition HotKeyTranslator::translateGameMessage(const GameMessage 
 			newModState |= CTRL;
 		}
 
-		if( keyState & KEY_STATE_SHIFT )
-		{
-			newModState |= SHIFT;
-		}
+		// TheSuperHackers @feature SHIFT is deliberately NOT filtered here any more.
+		// SHIFT+letter goes through the very same button click path as SHIFT+click on the
+		// command bar, so it picks the build target of the selected producer and queues it as
+		// a group. The queued amount is decided in ControlBarCommandProcessing exactly like a
+		// shifted mouse click, which keeps the two input paths consistent.
 
-		if( keyState & KEY_STATE_ALT )
-		{
-			newModState |= ALT;
-		}
+		// TheSuperHackers @feature ALT is deliberately NOT filtered here any more. ALT is the
+		// waypoint-mode key, and while it is held the player still has to be able to pick
+		// build targets with hot keys (R, U, ...) for the waypoint build feature. Only
+		// CTRL is treated as a command modifier that suppresses hot keys, as before.
 		if(newModState != 0)
 			return disp;
 		WideChar key = TheKeyboard->getPrintableKey((KeyDefType)msg->getArgument(0)->integer, 0);
@@ -103,7 +106,8 @@ GameMessageDisposition HotKeyTranslator::translateGameMessage(const GameMessage 
 		uKey.concat(key);
 		AsciiString aKey;
 		aKey.translate(uKey);
-		if(TheHotKeyManager && TheHotKeyManager->executeHotKey(aKey))
+		const Bool executed = ( TheHotKeyManager != nullptr ) && TheHotKeyManager->executeHotKey( aKey );
+		if( executed )
 			disp = DESTROY_MESSAGE;
 	}
 	return disp;
@@ -145,16 +149,47 @@ void HotKeyManager::addHotKey( GameWindow *win, const AsciiString& keyIn)
 {
 	AsciiString key = keyIn;
 	key.toLower();
-	HotKeyMap::iterator it = m_hotKeyMap.find(key);
-	if( it != m_hotKeyMap.end() )
+	std::vector<HotKey>& hotKeys = m_hotKeyMap[key];
+
+	// The command bar hands the same window its command over and over again, and unrelated
+	// buttons may legitimately share a letter. Register the pair once, then keep it.
+	for( const HotKey& hotKey : hotKeys )
 	{
-		DEBUG_CRASH(("Hotkey %s is already mapped to window %s, current window is %s", key.str(), it->second.m_win->winGetInstanceData()->m_decoratedNameString.str(), win->winGetInstanceData()->m_decoratedNameString.str()));
-		return;
+		if( hotKey.m_win == win )
+			return;
 	}
+
 	HotKey newHK;
 	newHK.m_key.set(key);
 	newHK.m_win = win;
-	m_hotKeyMap[key] = newHK;
+	hotKeys.push_back(newHK);
+}
+
+//-----------------------------------------------------------------------------
+/** Fire the clicked state of a hot key window, exactly like a mouse click on it would. */
+//-----------------------------------------------------------------------------
+static Bool executeHotKeyWindow( GameWindow *win )
+{
+	if( BitIsSet( win->winGetStatus(), WIN_STATUS_ENABLED ) )
+	{
+		TheWindowManager->winSendSystemMsg( win->winGetParent(), GBM_SELECTED, (WindowMsgData)win, win->winGetWindowId() );
+
+		// here we make the same click sound that the GUI uses when you click a button
+		AudioEventRTS buttonClick("GUIClick");
+
+		if( TheAudio )
+		{
+			TheAudio->addAudioEvent( &buttonClick );
+		}
+		return TRUE;
+	}
+
+	AudioEventRTS disabledClick( "GUIClickDisabled" );
+	if( TheAudio )
+	{
+		TheAudio->addAudioEvent( &disabledClick );
+	}
+	return FALSE;
 }
 
 //-----------------------------------------------------------------------------
@@ -165,31 +200,55 @@ Bool HotKeyManager::executeHotKey( const AsciiString& keyIn )
 	HotKeyMap::iterator it = m_hotKeyMap.find(key);
 	if( it == m_hotKeyMap.end() )
 		return FALSE;
-	GameWindow *win = it->second.m_win;
-	if( !win )
-		return FALSE;
-	if( !BitIsSet( win->winGetStatus(), WIN_STATUS_HIDDEN ) )
+
+	// TheSuperHackers @bugfix Ask the command bar first. Dozens of command buttons share the
+	// same letter (the Chinese localization alone has two dozen "&R" labels), so the only
+	// sensible answer is the button that is on the command bar right now.
+	if( TheControlBar )
 	{
-		if( BitIsSet( win->winGetStatus(), WIN_STATUS_ENABLED ) )
- 		{
- 			TheWindowManager->winSendSystemMsg( win->winGetParent(), GBM_SELECTED, (WindowMsgData)win, win->winGetWindowId() );
-
- 			// here we make the same click sound that the GUI uses when you click a button
- 			AudioEventRTS buttonClick("GUIClick");
-
- 			if( TheAudio )
- 			{
- 				TheAudio->addAudioEvent( &buttonClick );
- 			}
-			return TRUE;
- 		}
-
-		AudioEventRTS disabledClick( "GUIClickDisabled" );
-		if( TheAudio )
-		{
-			TheAudio->addAudioEvent( &disabledClick );
-		}
+		GameWindow *commandWin = TheControlBar->findCommandWindowByHotKey( key );
+		if( commandWin )
+			return executeHotKeyWindow( commandWin );
 	}
+
+	// Not a command bar button (science purchase, special power shortcut, ...). Several windows
+	// can share this letter there too, so prefer one that is on screen and usable. The same
+	// ancestor-chain visibility rule applies here: hidden parents hide their children.
+	GameWindow *enabledWin = nullptr;
+	GameWindow *visibleWin = nullptr;
+	for( const HotKey& hotKey : it->second )
+	{
+		GameWindow *win = hotKey.m_win;
+		if( !win )
+			continue;
+
+		Bool onScreen = TRUE;
+		for( GameWindow *ancestor = win; ancestor != nullptr; ancestor = ancestor->winGetParent() )
+		{
+			if( ancestor->winIsHidden() )
+			{
+				onScreen = FALSE;
+				break;
+			}
+		}
+		if( !onScreen )
+			continue;
+
+		if( BitIsSet( win->winGetStatus(), WIN_STATUS_ENABLED ) )
+		{
+			enabledWin = win;
+			break;
+		}
+		if( !visibleWin )
+			visibleWin = win;
+	}
+
+	if( enabledWin )
+		return executeHotKeyWindow( enabledWin );
+
+	if( visibleWin )
+		executeHotKeyWindow( visibleWin );
+
 	return FALSE;
 }
 
