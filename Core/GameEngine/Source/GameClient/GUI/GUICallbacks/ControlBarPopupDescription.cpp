@@ -384,7 +384,9 @@ void ControlBar::populateBuildTooltipLayout( const CommandButton *commandButton,
 						  commandButton->getCommandType() == GUI_COMMAND_OBJECT_UPGRADE )
 					{
 						ProductionUpdateInterface *pui = selectedObject->getProductionUpdateInterface();
-						if( pui && pui->getProductionCount() == MAX_BUILD_QUEUE_BUTTONS )
+						// TheSuperHackers @bugfix an upgrade always needs a fresh queue button,
+						// so measure button usage, not the raw number of queued entries
+						if( pui && pui->getQueueButtonCount() >= MAX_BUILD_QUEUE_BUTTONS )
 						{
 							descrip.concat( L"\n\n" );
 							descrip.concat( TheGameText->fetch( "TOOLTIP:TooltipCannotPurchaseBecauseQueueFull" ) );

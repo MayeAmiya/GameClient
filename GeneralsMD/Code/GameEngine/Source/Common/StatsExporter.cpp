@@ -33,6 +33,11 @@
 #include "GameLogic/Module/BattlePlanUpdate.h"
 
 #include <stdio.h>
+
+// Prevent zlib's zconf.h from typedef-ing "Byte" (unsigned char), which
+// conflicts with the game's own "Byte" (char) in Lib/BaseTypeCore.h.
+// Same approach as Core/Libraries/Source/Compression/CompressionManager.cpp.
+#define __MACTYPES__
 #include <zlib.h>
 
 #include "GameNetwork/GeneralsOnline/json.hpp"

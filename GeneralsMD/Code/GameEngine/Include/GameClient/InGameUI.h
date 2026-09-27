@@ -465,6 +465,10 @@ public:  // ********************************************************************
 	virtual void deselectDrawable(Drawable* draw);				///< Clear "selected" status from Drawable
 	virtual void deselectAllDrawables();							///< Clear the "select" flag from all drawables
 	virtual Int getSelectCount() { return m_selectCount; }		///< Get count of currently selected drawables
+
+	// TheSuperHackers @feature drag-select economy filter: state lives per-Player (logic,
+	// synced via MSG_SET_DRAG_SELECT_FILTER) so every machine applies the same filtering
+	// when re-deriving a player's drag selection from the synced selection region.
 	virtual Int getMaxSelectCount() { return m_maxSelectCount; }	///< Get the max number of selected drawables
 	virtual UnsignedInt getFrameSelectionChanged() { return m_frameSelectionChanged; }	///< Get the max number of selected drawables
 	virtual const DrawableList* getAllSelectedDrawables() const;	///< Return the list of all the currently selected Drawable IDs.

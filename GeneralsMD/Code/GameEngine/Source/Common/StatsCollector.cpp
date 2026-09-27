@@ -139,6 +139,7 @@ void StatsCollector::collectMsgStats( const GameMessage *msg )
 		case GameMessage::MSG_QUEUE_UNIT_CREATE:
 		case GameMessage::MSG_DOZER_CONSTRUCT:
 		case GameMessage::MSG_DOZER_CONSTRUCT_LINE:
+		case GameMessage::MSG_DOZER_WAYPOINT_BUILD:
 			{
 				++m_buildCommands;
 				break;

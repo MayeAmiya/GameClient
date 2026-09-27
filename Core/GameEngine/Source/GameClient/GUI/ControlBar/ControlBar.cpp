@@ -1120,7 +1120,6 @@ void ControlBar::init()
 		id = TheNameKeyGenerator->nameToKey( "ControlBar.wnd:ObserverPlayerInfoWindow" );
 		m_contextParent[ CP_OBSERVER_INFO ] = TheWindowManager->winGetWindowFromId( nullptr, id );
 
-
 		// get the command windows and save for easy access later
 		Int i;
 		ICoord2D commandSize, commandPos;

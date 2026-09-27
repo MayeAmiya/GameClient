@@ -236,6 +236,14 @@ public:
 	};
 	virtual Bool shouldReserveDoorWhenQueued(const ThingTemplate* thing) const = 0;
 	virtual Bool hasAvailableSpaceFor(const ThingTemplate* thing) const = 0;
+	/// TheSuperHackers @feature total number of parking spaces this producer owns (airfields
+	/// have 4 or 5 depending on the faction). Used to cap how many aircraft may be queued.
+	virtual Int getSpaceCount() const = 0;
+
+	/// TheSuperHackers @feature how many parking spaces are taken right now - aircraft parked
+	/// on them plus spaces reserved for a unit that is on its way out. The number of orders
+	/// that may still be queued is getSpaceCount() minus this.
+	virtual Int getOccupiedSpaceCount() const = 0;
 	virtual Bool hasReservedSpace(ObjectID id) const = 0;
 	virtual Int  getSpaceIndex( ObjectID id ) const = 0;
 	virtual Bool reserveSpace(ObjectID id, Real parkingOffset, PPInfo* info) = 0;

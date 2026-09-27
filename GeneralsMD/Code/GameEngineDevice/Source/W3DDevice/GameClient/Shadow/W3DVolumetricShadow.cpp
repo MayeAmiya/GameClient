@@ -948,9 +948,9 @@ void W3DShadowGeometryMesh::buildPolygonNeighbors()
 		// delete the old neighbor storage
 		deleteNeighbors();
 
-		// allocate a new pool for neighbor information
-		if (allocateNeighbors(numPolys) == FALSE)
-			return;
+	// allocate a new pool for neighbor information
+	if (allocateNeighbors(numPolys) == FALSE)
+		return;
 
 	}
 
@@ -2155,8 +2155,36 @@ void W3DVolumetricShadow::updateMeshVolume(Int meshIndex, Int lightIndex, const 
 				//make future updates faster by pre-caching face normals.
 				m_geometry->getMesh(meshIndex)->buildPolygonNormals();
 			}
+			Int prevSilhouetteCount = m_numSilhouetteIndices[meshIndex];
+			Int prevIndicesPerMesh = m_numIndicesPerMesh[meshIndex];
 			resetSilhouette(meshIndex);
 			buildSilhouette(meshIndex, &lightPosObject);
+
+			// TheSuperHackers @bugfix degenerate silhouette guard: when a thin rotating
+			// mesh ( supply center fan blades ) sits at the animation keyframe where a
+			// blade is exactly edge-on to the sun, the per-polygon light test becomes
+			// marginal and the built silhouette is degenerate - it collapses to a tiny
+			// shell or explodes to many times its normal size, flipping between the two
+			// states on consecutive rebuilds ( the fan shadow flickers between "gone"
+			// and "garbled" ).  Detect the flip against the previous build's size and
+			// keep the previous frame's volume instead: the shadow stays present with a
+			// pose a few frames old ( imperceptible ), and the rebuild is retried until
+			// the pose exits the degenerate keyframe.  Ordinary silhouette size
+			// variation ( a few edges between frames ) does not trigger this.
+			Int newSilhouetteCount = m_numSilhouetteIndices[meshIndex];
+			Bool countExploded = (newSilhouetteCount > prevSilhouetteCount * 4 + 32);
+			Bool countCollapsed = (newSilhouetteCount * 4 + 32 < prevSilhouetteCount);
+			if ((countExploded || countCollapsed) &&
+				m_shadowVolume[lightIndex][meshIndex] != nullptr &&
+				m_shadowVolume[lightIndex][meshIndex]->GetNumActiveVertex() > 0)
+			{
+				// restore the counters so the next frame compares against the healthy
+				// baseline again; the previous volume data is untouched and keeps
+				// rendering through the degenerate window
+				m_numSilhouetteIndices[meshIndex] = prevSilhouetteCount;
+				m_numIndicesPerMesh[meshIndex] = prevIndicesPerMesh;
+				return;
+			}
 
 			//
 			// in a multiple shadow situation we would be allocating a volume
@@ -2202,6 +2230,7 @@ void W3DVolumetricShadow::updateMeshVolume(Int meshIndex, Int lightIndex, const 
 			sphere.Center -= objectCenter;
 			m_shadowVolume[lightIndex][meshIndex]->setBoundingSphere(sphere);
 			m_shadowVolume[lightIndex][meshIndex]->setVisibleState(Geometry::STATE_VISIBLE);	//this volume needs rendering.
+
 		}
 		else
 			if (m_shadowVolume[lightIndex][meshIndex])
@@ -2386,9 +2415,17 @@ void W3DVolumetricShadow::addSilhouetteIndices(Int meshIndex, Short edgeStart, S
 	//							edgeStart, edgeEnd, m_numSilhouetteIndices, m_maxSilhouetteEntries ));
 
 		// add to silhouette edge list
-	assert(m_numSilhouetteIndices[meshIndex] < m_maxSilhouetteEntries[meshIndex]);
+	// TheSuperHackers @bugfix real bounds check ( the asserts below were the only
+	// guard and are compiled out in release builds ).  At specific rotation angles a
+	// mesh can momentarily produce more silhouette edges than estimated; overflowing
+	// wrote past this buffer and corrupted adjacent memory, displacing the rendered
+	// shadow ( fan blade shadow appearing on the terrain once per revolution ).  Drop
+	// excess edges instead - the volume is marginally incomplete for that frame but
+	// the heap stays intact.
+	if (m_numSilhouetteIndices[meshIndex] >= m_maxSilhouetteEntries[meshIndex] - 2)
+		return;
+
 	m_silhouetteIndex[meshIndex][m_numSilhouetteIndices[meshIndex]++] = edgeStart;
-	assert(m_numSilhouetteIndices[meshIndex] < m_maxSilhouetteEntries[meshIndex]);
 	m_silhouetteIndex[meshIndex][m_numSilhouetteIndices[meshIndex]++] = edgeEnd;
 
 }
@@ -3301,7 +3338,14 @@ void W3DVolumetricShadow::resetShadowVolume(Int volumeIndex, Int meshIndex)
 // ============================================================================
 Bool W3DVolumetricShadow::allocateSilhouette(Int meshIndex, Int numVertices)
 {
-	Int numEntries = numVertices * 5;	///@todo: HACK, HACK... Should be 2!
+	// TheSuperHackers @bugfix the old factor of 5 was a documented HACK that can
+	// overflow: partially-shared meshes ( animated fans with texture seams ) produce
+	// extra neighborless silhouette edges at specific rotation angles, and the count
+	// can exceed the estimate. Overflowing this buffer corrupts adjacent heap memory
+	// ( shadow volume vertex data / render tasks ) which displaces the rendered
+	// shadow - e.g. a fan blade shadow suddenly appearing displaced on the terrain
+	// once per revolution. 9 gives headroom over the worst case (~6V indices).
+	Int numEntries = numVertices * 9;
 
 	// sanity
 	assert(m_silhouetteIndex[meshIndex] == NULL &&

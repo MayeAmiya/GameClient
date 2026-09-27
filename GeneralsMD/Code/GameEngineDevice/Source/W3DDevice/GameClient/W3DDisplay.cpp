@@ -2024,6 +2024,19 @@ void W3DDisplay::draw()
 	W3D_UpdateScreenshotMessages();
 
 	updateAverageFPS();
+#if defined(GENERALS_ONLINE_HIGH_FPS_SERVER)
+	// TheSuperHackers @feature wire up the graphics quality governor: when the LOCAL
+	// render fps stays below the acceptance threshold, shed shadows/heat effects and
+	// trim the particle budget; restore once fps has been healthy again for a while.
+	// It only ever reacts to this machine's own render speed, never to lockstep
+	// slowdowns caused by other players.
+	// TheSuperHackers @bugfix the governor only flips the m_useShadowVolumes/
+	// m_useShadowDecals/m_useHeatEffects render gates. It must NEVER call
+	// GameClient::releaseShadows()/allocateShadows(): tearing down and recreating
+	// every volumetric shadow replays the vanilla one-time "first shadow build"
+	// glitch ( Supply Center fan shadow artifact ) on each quality transition.
+	TheGameLODManager->updateGraphicsQualityState(m_averageFPS);
+#endif
 	if (TheGlobalData->m_enableDynamicLOD && TheGameLogic->getShowDynamicLOD())
 	{
 		DynamicGameLODLevel lod=TheGameLODManager->findDynamicLODLevel(m_averageFPS);

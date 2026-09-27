@@ -19,6 +19,8 @@
 
 #include "Common/FramePacer.h"
 
+#include "Common/GlobalData.h"
+#include "GameClient/Display.h"
 #include "GameClient/View.h"
 
 #include "GameLogic/GameLogic.h"

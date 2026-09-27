@@ -34,6 +34,14 @@ if(NOT DEFINED RTS_PGO_FILE)
     set(RTS_PGO_FILE "${CMAKE_BINARY_DIR}/genzh.pgd" CACHE FILEPATH "MSVC PGO database path.")
 endif()
 
+# Render-side AVX2 acceleration. Only the render library targets (core_wwmath, z_ww3d2,
+# z_gameenginedevice) receive /arch:AVX2; the deterministic simulation is compiled exactly
+# as before. The resulting executable requires AVX2-capable CPUs (Intel Haswell 2013+ /
+# AMD Excavator 2015+) on every machine that runs this build.
+if(NOT DEFINED RTS_BUILD_OPTION_RENDER_AVX2)
+    option(RTS_BUILD_OPTION_RENDER_AVX2 "Compile the render libraries with AVX2 (MSVC only, requires AVX2 CPUs at runtime)." OFF)
+endif()
+
 # Make release builds have debug information too.
 if(MSVC)
     # Create PDB for Release as long as debug info was generated during compile.

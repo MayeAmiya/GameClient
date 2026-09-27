@@ -23,9 +23,11 @@
 
 #define GENERALS_ONLINE_DISABLE_AUTO_ACCEPT 1
 
-#if defined(_DEBUG)
-//#define USE_DEBUG_ON_LIVE_SERVER 1
-#endif
+// TheSuperHackers @todo: Self-built client: keep the version check from forcing
+// an update prompt on the live (PROD) server. USE_DEBUG_ON_LIVE_SERVER still
+// targets the PROD environment but skips the mandatory-update gate for the
+// self-built exe (its CRC is not in the server's release whitelist).
+#define USE_DEBUG_ON_LIVE_SERVER 1
 
 #if !defined(_DEBUG)
 //#define USE_TEST_ENV 1

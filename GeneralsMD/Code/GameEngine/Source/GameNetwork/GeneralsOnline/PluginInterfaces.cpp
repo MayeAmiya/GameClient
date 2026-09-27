@@ -119,9 +119,12 @@ void AnticheatPlugInterface::LoadPlugin(const char* szPluginName)
         AC_PLUGIN_LOAD_FUNCTION(GetAnticheatIdentifier);
 
 #if _DEBUG
+        // TheSuperHackers @bugfix debug diagnostic only — log instead of overwriting the main
+        // window title, which previously made the window name change while the game ran.
         if (ApplicationHWnd != nullptr)
         {
-            SetWindowText(ApplicationHWnd, Functions.fnIsExternalProcessRunning() ? "SECURED" : "INSECURE");
+            NetworkLog(ELogVerbosity::LOG_RELEASE, "AC external process running: %s",
+                Functions.fnIsExternalProcessRunning() ? "yes" : "no");
         }
 #endif
 

@@ -1220,6 +1220,20 @@ endif()
 
 add_library(z_gameengine STATIC)
 
+# TheSuperHackers: This library holds the deterministic lockstep simulation (GameLogic etc.).
+# DIAGNOSTIC ONLY - see RTS_BUILD_OPTION_SIM_FP_STRICT in cmake/config-build.cmake.
+# Giving the simulation /arch:AVX2 on its own is only risky in a *split* build, where the render
+# libraries are AVX2 and this one is SSE2: FMA contraction would then round differently per
+# target. With RTS_BUILD_OPTION_UNIFIED_AVX2 the whole binary is one ISA, so contraction is
+# identical everywhere and /fp:strict is not needed - use UNIFIED_AVX2 for shipping builds.
+# Whole program optimization is handled in cmake/config-build.cmake: enabling this option drops
+# /GL and /LTCG from core_config, because with them the linker could inline the /fp:fast render
+# code into this library. (A /GL- here would not work - CMake emits a target's own COMPILE_OPTIONS
+# before the INTERFACE ones, so core_config's /GL would land after it and win.)
+if(MSVC AND RTS_BUILD_OPTION_SIM_FP_STRICT)
+    target_compile_options(z_gameengine PRIVATE /arch:AVX2 /fp:strict)
+endif()
+
 target_sources(z_gameengine PRIVATE ${GAMEENGINE_SRC})
 
 target_compile_definitions(z_gameengine PRIVATE GAMESPY_IMPORT_DATA)

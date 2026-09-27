@@ -239,6 +239,8 @@ protected:
 	int  m_stableFPSSecondsCount;
 	int  m_lowFPSSecondsCount;
 	int  m_userMaxParticleCount;
+	UnsignedInt m_lastQualitySampleMs;		///< real-time sample gate so the cadence is independent of the logic frame rate
+	UnsignedInt m_qualityCooldownUntilMs;	///< anti-flap cooldown after a quality restore
 #endif
 };
 

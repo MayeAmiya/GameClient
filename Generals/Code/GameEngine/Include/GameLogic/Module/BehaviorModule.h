@@ -221,6 +221,8 @@ public:
 	};
 	virtual Bool shouldReserveDoorWhenQueued(const ThingTemplate* thing) const = 0;
 	virtual Bool hasAvailableSpaceFor(const ThingTemplate* thing) const = 0;
+	/// TheSuperHackers @feature total number of parking spaces this producer owns
+	virtual Int getSpaceCount() const = 0;
 	virtual Bool hasReservedSpace(ObjectID id) const = 0;
 	virtual Bool reserveSpace(ObjectID id, Real parkingOffset, PPInfo* info) = 0;
 	virtual void releaseSpace(ObjectID id) = 0;

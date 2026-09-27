@@ -236,6 +236,8 @@ GameLODManager::GameLODManager()
 	m_lowFPSSecondsCount = 0;
 	m_stableFPSSecondsCount = 0;
 	m_userMaxParticleCount = 0;
+	m_lastQualitySampleMs = 0u;
+	m_qualityCooldownUntilMs = 0u;
 #endif
 
 	for (Int i=0; i<STATIC_GAME_LOD_CUSTOM; i++)
@@ -778,15 +780,31 @@ Bool GameLODManager::didMemPass()
 #if defined(GENERALS_ONLINE_HIGH_FPS_SERVER)
 void GameLODManager::updateGraphicsQualityState(float averageFPS)
 {
-	if (!TheGameLogic || (TheGameLogic->getFrame() % LOGICFRAMES_PER_SECOND) != 0)
+	// TheSuperHackers @bugfix Sample once per real second instead of once per logic
+	// second: the old cadence (logic frame % 60) slowed down exactly when the logic
+	// frame rate was dragged down by lockstep, delaying detection/recovery on the
+	// machines that needed it most. averageFPS itself is the LOCAL render fps, so a
+	// slow teammate never triggers a quality drop on this machine.
+	const UnsignedInt nowMs = timeGetTime();
+	if (m_lastQualitySampleMs != 0u && (nowMs - m_lastQualitySampleMs) < 1000u)
 		return;
+	m_lastQualitySampleMs = nowMs;
 
-	if (TheGameLogic->isInShellGame() || TheGameLogic->isInReplayGame() || (TheGameLogic->getFrame() < LOGICFRAMES_PER_SECOND))
+	// Respect the user's dynamic LOD option; never fight it. Also skip shell/replay
+	// and the first logic second (startup transient).
+	if (!TheGameLogic || !TheGlobalData || !TheGlobalData->m_enableDynamicLOD ||
+			TheGameLogic->isInShellGame() || TheGameLogic->isInReplayGame() ||
+			(TheGameLogic->getFrame() < LOGICFRAMES_PER_SECOND))
 	{
 		if (m_isQualityReduced)
 			restoreQualitySettings();
 		return;
 	}
+
+	// Anti-flap cooldown after a restore so hovering around the threshold cannot
+	// cycle the expensive shadow rebuild every few seconds.
+	if (m_qualityCooldownUntilMs != 0u && nowMs < m_qualityCooldownUntilMs)
+		return;
 
 	if (!m_isQualityReduced)
 	{
@@ -813,7 +831,12 @@ void GameLODManager::updateGraphicsQualityState(float averageFPS)
 	bool shouldReduceQuality = (m_lowFPSSecondsCount >= 2 && isInGame);
 	if (shouldReduceQuality && !m_isQualityReduced)
 	{
-		TheGameClient->releaseShadows();
+		// TheSuperHackers @bugfix Only flip the render gates, do NOT call
+		// GameClient::releaseShadows()/allocateShadows() here. Those tear down and
+		// recreate every volumetric shadow from scratch, which replays the vanilla
+		// one-time "first shadow build" glitch ( stray fan shadows etc. ) on every
+		// quality transition. The m_useShadowVolumes/m_useShadowDecals flags are
+		// render gates, so flipping them alone stops all shadow rendering cost.
 		TheWritableGlobalData->m_useShadowVolumes = false;
 		TheWritableGlobalData->m_useShadowDecals = false;
 		TheWritableGlobalData->m_useHeatEffects = false;
@@ -821,27 +844,25 @@ void GameLODManager::updateGraphicsQualityState(float averageFPS)
 		m_lowFPSSecondsCount = 0;
 	}
 
-
 	if (m_isQualityReduced)
 	{
+		// Gradually steer the particle budget toward the target implied by the
+		// current render fps (half the remaining gap per one-second sample).
 		float particleReductionFactor = max(0.f, min(1.f, (minAcceptedFPS - averageFPS) / minAcceptedFPS * 5.f));
 		int targetCount = max(100, (int)(m_userMaxParticleCount * (1.f - particleReductionFactor)));
-		int current = TheGlobalData->m_maxParticleCount;
+		int current = TheWritableGlobalData->m_maxParticleCount;
 
 		if (targetCount < current)
 			TheWritableGlobalData->m_maxParticleCount = max(100, current + (int)((targetCount - current) * 0.5f));
+	}
 
-		if (!shouldReduceQuality && m_stableFPSSecondsCount > 15)
-		{
-			int newCount = current + (int)((m_userMaxParticleCount - current) * 0.3f);
-			if (newCount >= m_userMaxParticleCount || newCount == current)
-				restoreQualitySettings();
-			else
-				TheWritableGlobalData->m_maxParticleCount = newCount;
-
-			DynamicGameLODLevel lod = TheGameLODManager->findDynamicLODLevel(averageFPS);
-			TheGameLODManager->setDynamicLODLevel(lod);
-		}
+	if (m_isQualityReduced && !shouldReduceQuality && m_stableFPSSecondsCount > 10)
+	{
+		// FPS has been healthy for a while: restore everything in one step. The
+		// classic per-frame dynamic LOD in W3DDisplay::draw() keeps handling particle
+		// skipping, so no explicit LOD re-evaluation is needed here.
+		restoreQualitySettings();
+		m_qualityCooldownUntilMs = nowMs + 30000;
 	}
 }
 
@@ -854,7 +875,8 @@ void GameLODManager::restoreQualitySettings()
 	m_stableFPSSecondsCount = 0;
 	m_lowFPSSecondsCount = 0;
 	m_isQualityReduced = false;
-	if (TheGameClient)
-		TheGameClient->allocateShadows();
+	// TheSuperHackers @bugfix No GameClient::allocateShadows() here: the shadow
+	// objects were never released ( only their render gates were flipped ), so
+	// recreating them would replay the vanilla first-build shadow glitch.
 }
 #endif // GENERALS_ONLINE_HIGH_FPS_SERVER

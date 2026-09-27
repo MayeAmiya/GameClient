@@ -96,6 +96,7 @@
 #if defined(GENERALS_ONLINE)
 #include "../NGMP_interfaces.h"
 #include "../OnlineServices_Init.h"
+#include "GameNetwork/GeneralsOnline/OnlineServices_Auth.h"
 #include "../NetworkMesh.h"
 #include "GameNetwork/NetworkDefs.h"
 #include "GameNetwork/NetworkInterface.h"

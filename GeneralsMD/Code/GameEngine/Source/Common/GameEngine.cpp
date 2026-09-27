@@ -941,7 +941,12 @@ void GameEngine::update()
 
 #if defined(GENERALS_ONLINE_HIGH_FPS_RENDER)
 			// NGMP_NOTE: Lock the shellmap to 30fps until we fix everything
-			if (TheNGMPGame != nullptr && TheGameLogic->isInGame() && !TheShell->isShellActive())
+			// TheSuperHackers @bugfix The configured fps_limit used to apply to online games
+			// only (TheNGMPGame != nullptr), which left skirmish and every other local game
+			// locked to GENERALS_ONLINE_HIGH_FPS_LIMIT with no way to change it. The render
+			// frame rate does not affect the simulation, so the setting now applies to any
+			// in-game screen; the shellmap stays locked as before.
+			if (TheGameLogic->isInGame() && !TheShell->isShellActive())
 			{
 				TheFramePacer->setFramesPerSecondLimit(NGMP_OnlineServicesManager::Settings.Graphics_GetFPSLimit());
 				TheWritableGlobalData->m_useFpsLimit = NGMP_OnlineServicesManager::Settings.Graphics_GetFPSLimit();

@@ -34,8 +34,17 @@
 #include <format>
 #include <filesystem>
 
+// TheSuperHackers @bugfix installers may write the game keys to either the 32-bit or the
+// 64-bit view of the registry; a 32-bit process only sees the Wow6432Node view by default,
+// so both views must be probed explicitly for the registry fallback to be reliable.
+#ifndef KEY_WOW64_64KEY
+#define KEY_WOW64_64KEY 0x0100
+#endif
+#ifndef KEY_WOW64_32KEY
+#define KEY_WOW64_32KEY 0x0200
+#endif
 
-Bool  getStringFromRegistry(HKEY root, AsciiString path, AsciiString key, AsciiString& val)
+Bool  getStringFromRegistry(HKEY root, AsciiString path, AsciiString key, AsciiString& val, REGSAM extraAccess = 0)
 {
 	HKEY handle;
 	unsigned char buffer[256];
@@ -43,7 +52,7 @@ Bool  getStringFromRegistry(HKEY root, AsciiString path, AsciiString key, AsciiS
 	unsigned long type;
 	int returnValue;
 
-	if ((returnValue = RegOpenKeyEx( root, path.str(), 0, KEY_READ, &handle )) == ERROR_SUCCESS)
+	if ((returnValue = RegOpenKeyEx( root, path.str(), 0, KEY_READ | extraAccess, &handle )) == ERROR_SUCCESS)
 	{
 		returnValue = RegQueryValueEx(handle, key.str(), nullptr, &type, (unsigned char *) &buffer, &size);
 		RegCloseKey( handle );
@@ -53,6 +62,24 @@ Bool  getStringFromRegistry(HKEY root, AsciiString path, AsciiString key, AsciiS
 	{
 		val = (char *)buffer;
 		return TRUE;
+	}
+
+	return FALSE;
+}
+
+// TheSuperHackers @bugfix probe a value in both hives and both registry views
+static Bool getStringFromRegistryEveryView(const char *subKey, const char *valueName, AsciiString& val)
+{
+	static const HKEY roots[] = { HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER };
+	static const REGSAM views[] = { 0, KEY_WOW64_64KEY, KEY_WOW64_32KEY };
+
+	for (HKEY root : roots)
+	{
+		for (REGSAM view : views)
+		{
+			if (getStringFromRegistry(root, subKey, valueName, val, view))
+				return TRUE;
+		}
 	}
 
 	return FALSE;
@@ -121,16 +148,39 @@ Bool setUnsignedIntInRegistry( HKEY root, AsciiString path, AsciiString key, Uns
 
 Bool GetStringFromGeneralsRegistry(AsciiString path, AsciiString key, AsciiString& val)
 {
+	// TheSuperHackers @bugfix probe every known install location of the original Generals
+	// (retail/EA App and The First Decade) across both hives and both registry views, so the
+	// fallback in the BIG file system works even when no local ZH_Generals folder exists.
+	// Stale entries pointing at a directory that no longer exists are skipped so the next
+	// probe (and finally the caller's failure handling) gets its chance.
+	if (path.isEmpty())
+	{
+		struct RegistryProbe { const char *subKey; const char *valueName; };
+		static const RegistryProbe probes[] = {
+			{ "SOFTWARE\\Electronic Arts\\EA Games\\Generals", "InstallPath" },
+			{ "SOFTWARE\\Electronic Arts\\EA Games\\Command and Conquer The First Decade", "gr_folder" },
+		};
+
+		for (const RegistryProbe &probe : probes)
+		{
+			if (getStringFromRegistryEveryView(probe.subKey, probe.valueName, val))
+			{
+				if (std::filesystem::is_directory(val.str()))
+					return TRUE;
+
+				DEBUG_LOG(("GetStringFromGeneralsRegistry - skipping stale entry %s=%s", probe.subKey, val.str()));
+			}
+		}
+
+		val = AsciiString::TheEmptyString;
+		return FALSE;
+	}
+
 	AsciiString fullPath = "SOFTWARE\\Electronic Arts\\EA Games\\Generals";
 
 	fullPath.concat(path);
 	DEBUG_LOG(("GetStringFromRegistry - looking in %s for key %s", fullPath.str(), key.str()));
-	if (getStringFromRegistry(HKEY_CURRENT_USER, fullPath.str(), key.str(), val))
-	{
-		return TRUE;
-	}
-
-	return getStringFromRegistry(HKEY_LOCAL_MACHINE, fullPath.str(), key.str(), val);
+	return getStringFromRegistryEveryView(fullPath.str(), key.str(), val);
 }
 
 Bool GetStringFromRegistry(AsciiString path, AsciiString key, AsciiString& val)

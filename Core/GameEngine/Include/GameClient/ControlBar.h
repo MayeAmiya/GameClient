@@ -57,6 +57,7 @@ class UpgradeTemplate;
 class ControlBarResizer;
 class GameWindowTransitionsHandler;
 class DisplayString;
+class WinInstanceData;	// TheSuperHackers @feature for the queue button draw func signature
 
 enum ProductionID CPP_11(: Int);
 

@@ -2,9 +2,9 @@ add_executable(z_generals WIN32)
 
 # Use a binary name that doesn't conflict with original game.
 if("${CMAKE_SYSTEM}" MATCHES "Windows")
-    set_target_properties(z_generals PROPERTIES OUTPUT_NAME GeneralsOnlineZH)
+    set_target_properties(z_generals PROPERTIES OUTPUT_NAME GeneralsOnlineZH_Unlimited)
 else()
-    set_target_properties(z_generals PROPERTIES OUTPUT_NAME GeneralsOnlineZH)
+    set_target_properties(z_generals PROPERTIES OUTPUT_NAME GeneralsOnlineZH_Unlimited)
 endif()
 
 target_link_libraries(z_generals PRIVATE
@@ -47,6 +47,14 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/BuildVersion.h
 
 if(MSVC)
     target_link_options(z_generals PRIVATE "/NODEFAULTLIB:libci.lib")
+    # Opt into the full 4GB user address space on 64-bit Windows (32-bit Windows keeps
+    # the default 2GB). The engine is address-space hungry on large maps.
+    target_link_options(z_generals PRIVATE "/LARGEADDRESSAWARE")
+endif()
+
+if(MINGW)
+    # Same 4GB address space opt-in for MinGW-w64 x86 builds.
+    target_link_options(z_generals PRIVATE "-Wl,--large-address-aware")
 endif()
 
 target_include_directories(z_generals PRIVATE

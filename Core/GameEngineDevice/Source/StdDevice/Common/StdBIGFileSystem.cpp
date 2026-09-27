@@ -35,6 +35,9 @@
 #include "Common/LocalFileSystem.h"
 
 #if RTS_ZEROHOUR
+#include <windows.h>
+#include <format>
+#include <filesystem>
 #include "Common/Registry.h"
 #endif
 
@@ -59,13 +62,63 @@ void StdBIGFileSystem::init() {
 	loadBigFilesFromDirectory("", "*.big");
 
 #if RTS_ZEROHOUR
-    // load original Generals assets
-    AsciiString installPath;
-    GetStringFromGeneralsRegistry("", "InstallPath", installPath );
-    //@todo this will need to be ramped up to a crash for release
-    DEBUG_ASSERTCRASH(!installPath.isEmpty(), ("Be 1337! Go install Generals!"));
-    if (!installPath.isEmpty())
-      loadBigFilesFromDirectory(installPath, "*.big");
+	// TheSuperHackers @feature Locate the original Generals installation in a "ZH_Generals" folder
+	// next to the game executable first, so portable installs work without registry keys; fall
+	// back to the registry InstallPath when the folder does not exist. The trailing separator is
+	// required because loadBigFilesFromDirectory concatenates the directory and the file mask.
+	AsciiString installPath;
+	{
+		char szProcessDir[MAX_PATH] = { 0 };
+		DWORD length = GetModuleFileNameA(NULL, szProcessDir, MAX_PATH);
+		if (length > 0 && length != MAX_PATH)
+		{
+			// Remove the executable name to get the directory
+			for (int i = length - 1; i >= 0; --i) {
+				if (szProcessDir[i] == '\\' || szProcessDir[i] == '/')
+				{
+					szProcessDir[i] = '\0';
+					break;
+				}
+			}
+
+			std::string generalsDir = std::format("{}ZH_Generals\\", szProcessDir);
+			std::error_code fsEc;
+			Bool folderHasBigFiles = FALSE;
+			for (std::filesystem::directory_iterator it(generalsDir, std::filesystem::directory_options::skip_permission_denied, fsEc), end;
+					!fsEc && it != end; it.increment(fsEc))
+			{
+				std::string extension = it->path().extension().string();
+				if (_stricmp(extension.c_str(), ".big") == 0)
+				{
+					folderHasBigFiles = TRUE;
+					break;
+				}
+			}
+			if (folderHasBigFiles)
+			{
+				installPath = generalsDir.c_str();
+			}
+		}
+
+		// Fall back to the registry when no local ZH_Generals folder was found.
+		if (installPath.isEmpty())
+		{
+			GetStringFromGeneralsRegistry("", "InstallPath", installPath);
+			// Registry values are not guaranteed to carry a trailing separator.
+			if (!installPath.isEmpty())
+			{
+				char lastChar = installPath.getCharAt(installPath.getLength() - 1);
+				if (lastChar != '\\' && lastChar != '/')
+				{
+					installPath.concat('\\');
+				}
+			}
+		}
+	}
+	//@todo this will need to be ramped up to a crash for release
+	DEBUG_ASSERTCRASH(!installPath.isEmpty(), ("Be 1337! Go install Generals! (expected a 'ZH_Generals' folder next to the executable, or a valid registry InstallPath)"));
+	if (!installPath.isEmpty())
+		loadBigFilesFromDirectory(installPath, "*.big");
 #endif
 }
 

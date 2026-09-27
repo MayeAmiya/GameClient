@@ -64,6 +64,13 @@
 #include "Common/GameType.h"
 
 class SegmentedLineClass;
+class Player;
+
+// TheSuperHackers @feature Manages the translucent ghost previews of queued waypoint build
+// orders (create / reposition / destroy). MUST be called from a NON-rendering context, e.g.
+// InGameUI::update(). Doing this from inside the render walk crashes the game, because
+// destroyDrawable() mutates the very drawable list the renderer is walking.
+void updateGhostBuildPreviews( Player *localPlayer );
 
 class W3DWaypointBuffer
 {
