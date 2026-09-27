@@ -229,57 +229,24 @@ static void updateTGAtoDDS();
 //-------------------------------------------------------------------------------------------------
 static void updateWindowTitle()
 {
-	// TheSuperHackers @tweak Now prints product and version information in the Window title.
-
-	DEBUG_ASSERTCRASH(TheVersion != nullptr, ("TheVersion is null"));
-	DEBUG_ASSERTCRASH(TheGameText != nullptr, ("TheGameText is null"));
+	// TheSuperHackers @bugfix keep the window title stable: always use the exact same title
+	// text as window creation (GAME_WINDOW_TITLE_TEXT, see WinMain). Previously this replaced
+	// the title with a different version string while the game was running, so the window
+	// name changed mid-run. Only the multi-instance marker is prepended.
 
 	UnicodeString title;
 
 	if (rts::ClientInstance::getInstanceId() > 1u)
 	{
 		UnicodeString str;
-		str.format(L"Instance:%.2u", rts::ClientInstance::getInstanceId());
+		str.format(L"Instance:%.2u ", rts::ClientInstance::getInstanceId());
 		title.concat(str);
 	}
 
-	UnicodeString productString = TheVersion->getUnicodeProductString();
-
-	if (!productString.isEmpty())
-	{
-		if (!title.isEmpty())
-			title.concat(L" ");
-		title.concat(productString);
-	}
-
-#if RTS_GENERALS
-	const WideChar* defaultGameTitle = L"Command and Conquer Generals";
-#elif RTS_ZEROHOUR
-	const WideChar* defaultGameTitle = L"Command and Conquer Generals Zero Hour";
-#endif
-	UnicodeString gameTitle = TheGameText->FETCH_OR_SUBSTITUTE("GUI:Command&ConquerGenerals", defaultGameTitle);
-
-	if (!gameTitle.isEmpty())
-	{
-		UnicodeString gameTitleFinal;
-		UnicodeString gameVersion = TheVersion->getUnicodeVersion();
-
-		if (productString.isEmpty())
-		{
-			gameTitleFinal = gameTitle;
-		}
-		else
-		{
-			UnicodeString gameTitleFormat = TheGameText->FETCH_OR_SUBSTITUTE("Version:GameTitle", L"for %ls");
-			gameTitleFinal.format(gameTitleFormat.str(), gameTitle.str());
-		}
-
-		if (!title.isEmpty())
-			title.concat(L" ");
-		title.concat(gameTitleFinal.str());
-		title.concat(L" ");
-		title.concat(gameVersion.str());
-	}
+	AsciiString titleTextA = GAME_WINDOW_TITLE_TEXT;
+	UnicodeString windowTitle;
+	windowTitle.translate(titleTextA);
+	title.concat(windowTitle.str());
 
 	if (!title.isEmpty())
 	{

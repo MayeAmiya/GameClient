@@ -731,7 +731,7 @@ static Bool initializeAppWindows(HINSTANCE hInstance, Int nCmdShow, Bool runWind
 	gInitializing = true;
 
 	HWND hWnd = CreateWindow(TEXT("Game Window"),
-		TEXT("Command and Conquer Generals"),
+		TEXT(GAME_WINDOW_TITLE_TEXT),
 		windowStyle,
 		(GetSystemMetrics(SM_CXSCREEN) / 2) - (startWidth / 2), // original position X
 		(GetSystemMetrics(SM_CYSCREEN) / 2) - (startHeight / 2),// original position Y

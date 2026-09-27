@@ -31,6 +31,11 @@
 #include "Common/SubsystemInterface.h"
 #include "Common/GameType.h"
 
+// TheSuperHackers @tweak single source of truth for the main window title: used both at
+// window creation (WinMain) and by the engine's title update, so the window title never
+// changes while the game is running (only the multi-instance prefix may be prepended).
+#define GAME_WINDOW_TITLE_TEXT "Command and Conquer Generals Online Unlimited 260925"
+
 // forward declarations
 class AudioManager;
 class GameLogic;
