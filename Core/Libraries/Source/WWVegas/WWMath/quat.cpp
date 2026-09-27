@@ -111,7 +111,11 @@ Quaternion::Quaternion(const Vector3 & axis,float angle)
 void Quaternion::Normalize()
 {
 	float len2=X * X + Y * Y + Z * Z + W * W;
-	if (0.0f == len2) {
+	// TheSuperHackers @bugfix a denormal magnitude must count as degenerate as well: the FP
+	// state is preserved now (DX8Wrapper_PreserveFPU, no FTZ/DAZ flush), so a tiny magnitude
+	// survives an "== 0" test, and Inv_Sqrt would scale the quaternion up by ~1e20 - a bone
+	// blown up by that factor stretches the model part attached to it away to infinity.
+	if (!(len2 > FLT_MIN)) {
 		return;
 	} else {
 		float inv_mag = WWMath::Inv_Sqrt(len2);

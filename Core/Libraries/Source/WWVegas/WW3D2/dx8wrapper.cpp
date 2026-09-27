@@ -99,6 +99,13 @@ static DX8FrameStatistics LastFrameStatistics;
 bool DX8Wrapper_IsWindowed = true;
 
 // FPU_PRESERVE
+// TheSuperHackers @tweak Disabled by default, matching the original game: Direct3D is allowed to
+// put the FPU/MXCSR into its own state (lowered precision, flush-to-zero / denormals-are-zero).
+// Enabling it (1, or -FPUPreserve 1 on the command line) keeps the FP state intact so the
+// compiled floating point model also holds at runtime, but it lets denormals survive into the
+// W3D math - a degenerate length then turns 1/sqrtf() into a ~1e20 magnitude and blows bone
+// transforms up (models stretching away to infinity). The degenerate-input guards in wwmath.h
+// are the proper fix for that; this switch only decides whether D3D's FTZ state hides it.
 int DX8Wrapper_PreserveFPU = 0;
 
 /***********************************************************************************

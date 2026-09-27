@@ -379,7 +379,9 @@ void Matrix3D::Look_At_Dir(const Vector3 &pos, const Vector3 &dir, float roll)
 	cosp = len2;
 
 	// yaw
-	if (len2 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard (see WWMath::Inv_Sqrt): a denormal
+	// length would otherwise blow siny/cosy up to a meaningless magnitude
+	if (len2 > FLT_MIN) {
 		siny = dy/len2;
 		cosy = dx/len2;
 	} else {
@@ -419,7 +421,8 @@ void Matrix3D::buildTransformMatrix( const Vector3 &pos, const Vector3 &dir )
 	sinp = dir.Z;
 	cosp = len2;
 
-	if( len2 != 0.0f )
+	// TheSuperHackers @bugfix denormal-safe guard, see WWMath::Inv_Sqrt
+	if( len2 > FLT_MIN )
 	{
 		siny = dir.Y / len2;
 		cosy = dir.X / len2;
@@ -475,7 +478,8 @@ void Matrix3D::Obj_Look_At(const Vector3 &p,const Vector3 &t,float roll)
 	len1 = (float)sqrt(dx*dx + dy*dy + dz*dz);
 	len2 = (float)sqrt(dx*dx + dy*dy);
 
-	if (len1 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard, see WWMath::Inv_Sqrt
+	if (len1 > FLT_MIN) {
 		sinp = dz/len1;
 		cosp = len2/len1;
 	} else {
@@ -483,7 +487,9 @@ void Matrix3D::Obj_Look_At(const Vector3 &p,const Vector3 &t,float roll)
 		cosp = 1.0f;
 	}
 
-	if (len2 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard (see WWMath::Inv_Sqrt): a denormal
+	// length would otherwise blow siny/cosy up to a meaningless magnitude
+	if (len2 > FLT_MIN) {
 		siny = dy/len2;
 		cosy = dx/len2;
 	} else {

@@ -417,7 +417,10 @@ WWINLINE float Vector3::Cross_Product_Z(const Vector3 &a,const Vector3 &b)
 WWINLINE void Vector3::Normalize()
 {
 	float len2 = Length2();
-	if (len2 != 0.0f)
+	// TheSuperHackers @bugfix denormal-safe guard: the FP state is preserved now (no FTZ/DAZ
+	// flush), so a degenerate length can survive as a denormal and Inv_Sqrt would return a
+	// ~1e20 magnitude instead of leaving the vector alone.
+	if (len2 > FLT_MIN)
 	{
 		float oolen = WWMath::Inv_Sqrt(len2);
 		X *= oolen;
@@ -430,7 +433,8 @@ WWINLINE void Vector3::Normalize()
 WWINLINE Vector3 Normalize(const Vector3 & vec)
 {
 	float len2 = vec.Length2();
-	if (len2 != 0.0f)
+	// TheSuperHackers @bugfix denormal-safe guard, see Vector3::Normalize
+	if (len2 > FLT_MIN)
 	{
 		float oolen = WWMath::Inv_Sqrt(len2);
 		return vec * oolen;

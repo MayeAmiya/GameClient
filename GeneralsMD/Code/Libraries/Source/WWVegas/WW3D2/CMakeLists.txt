@@ -236,6 +236,23 @@ set(WW3D2_SRC
 add_library(z_ww3d2 STATIC)
 set_target_properties(z_ww3d2 PROPERTIES OUTPUT_NAME ww3d2)
 
+if(MSVC AND RTS_BUILD_OPTION_RENDER_AVX2)
+    # Render-only AVX2: the WW3D2 render library is never part of the deterministic
+    # game simulation, so its floating-point results may differ from the SSE2 build.
+    target_compile_options(z_ww3d2 PRIVATE /arch:AVX2)
+endif()
+
+# TheSuperHackers @tweak diagnostic switch, see cmake/config-build.cmake: off by default, so
+# the render library is PGO optimized like the rest of the build.
+if(RTS_BUILD_OPTION_PGO_EXCLUDE_RENDER)
+    set_property(TARGET z_ww3d2 PROPERTY RTS_NO_PGO TRUE)
+endif()
+
+if(MSVC AND RTS_BUILD_OPTION_RENDER_FP_FAST)
+    # TheSuperHackers: render only, so it never feeds the lockstep CRC.
+    target_compile_options(z_ww3d2 PRIVATE /fp:fast)
+endif()
+
 target_sources(z_ww3d2 PRIVATE ${WW3D2_SRC})
 
 target_compile_definitions(z_ww3d2 PRIVATE

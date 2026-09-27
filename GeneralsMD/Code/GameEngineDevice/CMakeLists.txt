@@ -194,6 +194,23 @@ set(GAMEENGINEDEVICE_SRC
 
 add_library(z_gameenginedevice STATIC)
 
+if(MSVC AND RTS_BUILD_OPTION_RENDER_AVX2)
+    # Render-only AVX2: the W3D render device is never part of the deterministic game
+    # simulation, so its floating-point results may differ from the SSE2 build.
+    target_compile_options(z_gameenginedevice PRIVATE /arch:AVX2)
+endif()
+
+# TheSuperHackers @tweak diagnostic switch, see cmake/config-build.cmake: off by default, so
+# the W3D device is PGO optimized like the rest of the build.
+if(RTS_BUILD_OPTION_PGO_EXCLUDE_RENDER)
+    set_property(TARGET z_gameenginedevice PROPERTY RTS_NO_PGO TRUE)
+endif()
+
+if(MSVC AND RTS_BUILD_OPTION_RENDER_FP_FAST)
+    # TheSuperHackers: render only, so it never feeds the lockstep CRC.
+    target_compile_options(z_gameenginedevice PRIVATE /fp:fast)
+endif()
+
 target_sources(z_gameenginedevice PRIVATE ${GAMEENGINEDEVICE_SRC})
 
 target_include_directories(z_gameenginedevice PUBLIC

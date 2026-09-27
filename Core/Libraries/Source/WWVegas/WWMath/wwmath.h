@@ -41,6 +41,14 @@
 #include <float.h>
 #include <assert.h>
 
+// TheSuperHackers @feature Replace the legacy x87 float->int inline assembly with SSE2
+// conversions (cvtss2si/cvtsd2si), which produce the same round-to-nearest results but do
+// not depend on the x87 FPU control word (which other code can change at any time).
+// MSVC x86 builds use SSE2 by default since VS2012.
+#if defined(_MSC_VER) && defined(_M_IX86)
+#include <emmintrin.h>
+#endif
+
 /*
 ** Some global constants.
 */
@@ -316,14 +324,9 @@ WWINLINE bool WWMath::Is_Valid_Double(double x)
 #if defined(_MSC_VER) && defined(_M_IX86)
 WWINLINE long WWMath::Float_To_Long(float f)
 {
-	long i;
-
-	__asm {
-		fld [f]
-		fistp [i]
-	}
-
-	return i;
+	// Same round-to-nearest result as the legacy x87 fistp under setFPMode's _RC_NEAR,
+	// but independent of the FPU control word.
+	return _mm_cvtss_si32(_mm_set_ss(f));
 }
 #else
 WWINLINE long WWMath::Float_To_Long(float f)
@@ -335,12 +338,9 @@ WWINLINE long WWMath::Float_To_Long(float f)
 WWINLINE long WWMath::Float_To_Long(double f)
 {
 #if defined(_MSC_VER) && defined(_M_IX86)
-	long retval;
-	__asm {
-		fld	qword ptr [f]
-		fistp dword ptr [retval]
-	}
-	return retval;
+	// Same round-to-nearest result as the legacy x87 fistp under setFPMode's _RC_NEAR,
+	// but independent of the FPU control word.
+	return _mm_cvtsd_si32(_mm_set_sd(f));
 #else
 	return (long) f;
 #endif
@@ -350,7 +350,10 @@ WWINLINE long WWMath::Float_To_Long(double f)
 // Cos
 // ----------------------------------------------------------------------------
 
-#if defined(_MSC_VER) && defined(_M_IX86)
+// The legacy x87 fcos inline assembly is opt-in only (RTS_WW_MATH_X87_ASM); the standard
+// implementation is used everywhere else. Render-side only, the game simulation never
+// calls these functions.
+#if defined(RTS_WW_MATH_X87_ASM) && defined(_MSC_VER) && defined(_M_IX86)
 WWINLINE float WWMath::Cos(float val)
 {
 	float retval;
@@ -372,7 +375,7 @@ WWINLINE float WWMath::Cos(float val)
 // Sin
 // ----------------------------------------------------------------------------
 
-#if defined(_MSC_VER) && defined(_M_IX86)
+#if defined(RTS_WW_MATH_X87_ASM) && defined(_MSC_VER) && defined(_M_IX86)
 WWINLINE float WWMath::Sin(float val)
 {
 	float retval;
@@ -562,7 +565,10 @@ WWINLINE float WWMath::Asin(float val)
 // Sqrt
 // ----------------------------------------------------------------------------
 
-#if defined(_MSC_VER) && defined(_M_IX86)
+// The legacy x87 fsqrt inline assembly is opt-in only (RTS_WW_MATH_X87_ASM). Note that
+// sqrtf is bit-identical to fsqrt under setFPMode's 24-bit precision mode (both are the
+// correctly rounded single-precision square root).
+#if defined(RTS_WW_MATH_X87_ASM) && defined(_MSC_VER) && defined(_M_IX86)
 WWINLINE float WWMath::Sqrt(float val)
 {
 	float retval;
@@ -576,7 +582,7 @@ WWINLINE float WWMath::Sqrt(float val)
 #else
 WWINLINE float WWMath::Sqrt(float val)
 {
-	return (float)sqrt(val);
+	return sqrtf(val);
 }
 #endif
 
@@ -610,9 +616,25 @@ WWINLINE int WWMath::Float_To_Int_Floor (const float& f)
 // Inverse square root
 // ----------------------------------------------------------------------------
 
-#if defined(_MSC_VER) && defined(_M_IX86)
+// The legacy x87 Newton-Raphson inline assembly is opt-in only (RTS_WW_MATH_X87_ASM).
+// The plain IEEE sqrt-based version below is more accurate and typically faster on
+// modern CPUs (sqrtss + divss).
+//
+// TheSuperHackers @bugfix degenerate input guard. Callers only guard against an *exactly*
+// zero length (see Quaternion::Normalize / Vector3::Normalize): that used to be enough
+// because Direct3D left the FPU in FTZ/DAZ mode, which flushed denormals to zero. With the
+// floating point state now preserved (DX8Wrapper_PreserveFPU), a length can survive as a
+// denormal, and an exact 1/sqrtf() turns that into a ~1e20 magnitude - a bone or direction
+// blown up by that factor makes the model part attached to it stretch away to infinity.
+// The legacy x87 approximation returned a finite (if meaningless) value here, so treat every
+// non-normal input as degenerate and return 0: callers then scale by 0 instead of exploding.
+#define RTS_WW_MATH_DEGENERATE_INV_SQRT(val) (!((val) > FLT_MIN))
+#if defined(RTS_WW_MATH_X87_ASM) && defined(_MSC_VER) && defined(_M_IX86)
 WWINLINE float WWMath::Inv_Sqrt(float a)
 {
+	if (RTS_WW_MATH_DEGENERATE_INV_SQRT(a))
+		return 0.0f;
+
 	float retval;
 
 	__asm {
@@ -664,7 +686,10 @@ WWINLINE float WWMath::Inv_Sqrt(float a)
 #else
 WWINLINE float WWMath::Inv_Sqrt(float val)
 {
-	return 1.0f / (float)sqrt(val);
+	if (RTS_WW_MATH_DEGENERATE_INV_SQRT(val))
+		return 0.0f;
+
+	return 1.0f / sqrtf(val);
 }
 #endif
 

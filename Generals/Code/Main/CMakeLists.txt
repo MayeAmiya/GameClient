@@ -56,6 +56,14 @@ endif()
 
 if(MSVC)
     target_link_options(g_generals PRIVATE "/NODEFAULTLIB:libci.lib")
+    # Opt into the full 4GB user address space on 64-bit Windows (32-bit Windows keeps
+    # the default 2GB). The engine is address-space hungry on large maps.
+    target_link_options(g_generals PRIVATE "/LARGEADDRESSAWARE")
+endif()
+
+if(MINGW)
+    # Same 4GB address space opt-in for MinGW-w64 x86 builds.
+    target_link_options(g_generals PRIVATE "-Wl,--large-address-aware")
 endif()
 
 target_include_directories(g_generals PRIVATE

@@ -83,6 +83,23 @@ set(WWMATH_SRC
 add_library(core_wwmath STATIC)
 set_target_properties(core_wwmath PROPERTIES OUTPUT_NAME wwmath)
 
+if(MSVC AND RTS_BUILD_OPTION_RENDER_AVX2)
+    # Render-only AVX2: WWMath is never called from the deterministic game simulation.
+    target_compile_options(core_wwmath PRIVATE /arch:AVX2)
+endif()
+
+# TheSuperHackers @tweak diagnostic switch: RTS_BUILD_OPTION_PGO_EXCLUDE_RENDER leaves the
+# render side out of PGO (/GL drives the instrumentation and the link-time re-optimization).
+# Off by default - the render libraries are PGO optimized like everything else.
+if(RTS_BUILD_OPTION_PGO_EXCLUDE_RENDER)
+    set_property(TARGET core_wwmath PROPERTY RTS_NO_PGO TRUE)
+endif()
+
+if(MSVC AND RTS_BUILD_OPTION_RENDER_FP_FAST)
+    # TheSuperHackers: render only, so it never feeds the lockstep CRC.
+    target_compile_options(core_wwmath PRIVATE /fp:fast)
+endif()
+
 target_sources(core_wwmath PRIVATE ${WWMATH_SRC})
 
 target_link_libraries(core_wwmath PRIVATE

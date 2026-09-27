@@ -326,7 +326,8 @@ WWINLINE bool Equal_Within_Epsilon(const Vector2 &a,const Vector2 &b,float epsil
 WWINLINE void Vector2::Normalize()
 {
 	float len2 = Length2();
-	if (len2 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard, see Vector3::Normalize
+	if (len2 > FLT_MIN) {
 		float oolen = WWMath::Inv_Sqrt(len2);
 		X *= oolen;
 		Y *= oolen;
@@ -336,7 +337,8 @@ WWINLINE void Vector2::Normalize()
 WWINLINE Vector2 Normalize(const Vector2 & vec)
 {
 	float len2 = vec.Length2();
-	if (len2 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard, see Vector3::Normalize
+	if (len2 > FLT_MIN) {
 		float oolen = WWMath::Inv_Sqrt(len2);
 		return vec / oolen;
 	}

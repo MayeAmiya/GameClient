@@ -271,7 +271,8 @@ WWINLINE bool operator != (const Vector4 &a,const Vector4 &b)
 WWINLINE void Vector4::Normalize()
 {
 	float len2 = Length2();
-	if (len2 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard, see Vector3::Normalize
+	if (len2 > FLT_MIN) {
 		float oolen = WWMath::Inv_Sqrt(len2);
 		X *= oolen;
 		Y *= oolen;
@@ -283,7 +284,8 @@ WWINLINE void Vector4::Normalize()
 WWINLINE Vector4 Normalize(const Vector4 & vec)
 {
 	float len2 = vec.Length2();
-	if (len2 != 0.0f) {
+	// TheSuperHackers @bugfix denormal-safe guard, see Vector3::Normalize
+	if (len2 > FLT_MIN) {
 		float oolen = WWMath::Inv_Sqrt(len2);
 		return vec * oolen;
 	}
