@@ -269,6 +269,14 @@ UpdateSleepTime ToppleUpdate::update()
 	if ( (m_toppleState == TOPPLE_UPRIGHT)  ||  (m_toppleState == TOPPLE_DOWN) )
 		return UPDATE_SLEEP_FOREVER;
 
+	// TheSuperHackers @bugfix The topple integration is tuned for the vanilla 30 Hz logic.
+	// Under the high-fps server the logic ticks at 60 Hz, so advance this module only on
+	// legacy frames (every 2nd logic frame) to keep the topple at vanilla pace.
+#if defined(GENERALS_ONLINE_HIGH_FPS_SERVER)
+	if (!TheGameLogic->HasLegacyFrameAdvanced())
+		return UPDATE_SLEEP_NONE;
+#endif
+
 	const ToppleUpdateModuleData* d = getToppleUpdateModuleData();
 	const Real VELOCITY_BOUNCE_LIMIT = 0.01f;				// if the velocity after a bounce will be this or lower, just stop at zero
 	const Real VELOCITY_BOUNCE_SOUND_LIMIT = 0.03f;	// and if this low, then skip the bounce sound

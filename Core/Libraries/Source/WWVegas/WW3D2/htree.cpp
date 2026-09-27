@@ -583,6 +583,7 @@ void HTreeClass::Anim_Update(const Matrix3D & root,HAnimClass * motion,float fra
 
 			Quaternion q;
 			motion->Get_Orientation(q,piv_idx,frame);
+
 			::Build_Matrix3D(q,mtx);
 
 #ifdef ALLOW_TEMPORARIES
@@ -602,11 +603,14 @@ void HTreeClass::Anim_Update(const Matrix3D & root,HAnimClass * motion,float fra
 		}
 	}
 }
+/*Customized version of the above which excludes interpolation and assumes HRawAnimClass
+For use by 'Generals' -MW*/
 
 /*Customized version of the above which excludes interpolation and assumes HRawAnimClass
 For use by 'Generals' -MW*/
 void HTreeClass::Anim_Update_Without_Interpolation(const Matrix3D & root,HRawAnimClass * motion,float frame)
 {
+
 	if (WW3D::Get_Sync_Frame_Time() == 0 && (int)motion->Get_Frame_Rate() == WWSyncPerSecond)
 	{
 		// TheSuperHackers @tweak Keep the animation frame step in sync with the ww3d frame step if they can align.
@@ -690,6 +694,7 @@ void HTreeClass::Anim_Update_Without_Interpolation(const Matrix3D & root,HRawAni
 			pivot->IsVisible = true;
 		}
 	}
+
 }
 
 
@@ -715,6 +720,7 @@ void HTreeClass::Blend_Update
 	float									percentage		// 0.0 = motion0.  1.0 = motion1
 )
 {
+
 	PivotClass *pivot;
 	Matrix3D mtx;
 
@@ -761,6 +767,7 @@ void HTreeClass::Blend_Update
 			pivot->IsVisible = true;
 		}
 	}
+
 }
 
 
@@ -783,6 +790,7 @@ void HTreeClass::Combo_Update
 	HAnimComboClass *anim
 )
 {
+
 	PivotClass *pivot;
 	Matrix3D mtx;
 

@@ -2092,7 +2092,11 @@ void W3DModelDraw::doDrawModule(const Matrix3D* transformMtx)
 		}
 	}
 
-	adjustAnimSpeedToMovementSpeed();
+	// TheSuperHackers @info No extra logic-rate scaling is applied here on purpose. The WW3D
+	// animation clock (WW3D::Get_Logic_Time_Milliseconds, fed by FramePacer::getLogicTimeStepMilliseconds)
+	// already advances at simulation speed, so animations automatically speed up or slow down
+	// with the effective logic rate. The multiplier only carries the INI data factor
+	// (AnimationSpeedFactorRange) rolled for this state, exactly like the base game.
 
 	// set our position in the render object to our position of the drawable
 	if (m_renderObject)

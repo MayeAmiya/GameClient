@@ -137,7 +137,13 @@ void StructureToppleUpdate::beginStructureTopple(const DamageInfo *damageInfo)
 
 	if (d)
 	{
+		// TheSuperHackers @bugfix The topple delays are authored in vanilla 30 Hz frames,
+		// so base them on the legacy frame counter under the high-fps server.
+#if defined(GENERALS_ONLINE_HIGH_FPS_SERVER)
+		UnsignedInt now = TheGameLogic->getFrameLegacy();
+#else
 		UnsignedInt now = TheGameLogic->getFrame();
+#endif
 		m_toppleFrame = now + GameLogicRandomValue(d->m_minToppleDelay, d->m_maxToppleDelay);
 
 		Object *attacker = TheGameLogic->findObjectByID(damageInfo->in.m_sourceID);
@@ -202,6 +208,14 @@ UpdateSleepTime StructureToppleUpdate::update()
 {
 	static const Real TOPPLE_ACCELERATION_FACTOR = 0.02f;
 
+	// TheSuperHackers @bugfix The topple integration and its delay timers are tuned for the
+	// vanilla 30 Hz logic. Under the high-fps server the logic ticks at 60 Hz, so advance this
+	// module only on legacy frames (every 2nd logic frame) to keep the collapse at vanilla pace.
+#if defined(GENERALS_ONLINE_HIGH_FPS_SERVER)
+	if (!TheGameLogic->HasLegacyFrameAdvanced())
+		return UPDATE_SLEEP_NONE;
+#endif
+
 	const StructureToppleUpdateModuleData *d = getStructureToppleUpdateModuleData();
 
 	if (m_toppleState == TOPPLESTATE_STANDING)
@@ -216,7 +230,7 @@ UpdateSleepTime StructureToppleUpdate::update()
 	// We are in the dramatic pause between when the building has lost all its hit points and
 	// when it starts toppling over.
 	if (m_toppleState == TOPPLESTATE_WAITINGFORTOPPLESTART) {
-		UnsignedInt now = TheGameLogic->getFrame();
+		UnsignedInt now = TheGameLogic->getFrameLegacy();
 		if (now >= m_nextBurstFrame) {
 			doToppleDelayBurstFX();
 			// This uses a game client random value because the delay bursts are purely visual and aural effects.
@@ -230,7 +244,7 @@ UpdateSleepTime StructureToppleUpdate::update()
 
 	// The building is in the process of falling over.
 	if (m_toppleState == TOPPLESTATE_TOPPLING) {
-		UnsignedInt now = TheGameLogic->getFrame();
+		UnsignedInt now = TheGameLogic->getFrameLegacy();
 		Real toppleAcceleration = TOPPLE_ACCELERATION_FACTOR * (Sin(m_accumulatedAngle) * (1.0 - m_structuralIntegrity));
 //		DEBUG_LOG(("toppleAcceleration = %f", toppleAcceleration));
 		m_toppleVelocity += toppleAcceleration;
@@ -262,7 +276,7 @@ UpdateSleepTime StructureToppleUpdate::update()
 			if( lastDamageInfo == nullptr || getDamageTypeFlag( d->m_damageFXTypes, lastDamageInfo->in.m_damageType ) )
 				FXList::doFXObj(d->m_toppleDoneFXList, getObject());
 
-			m_toppleFrame = TheGameLogic->getFrame();
+			m_toppleFrame = TheGameLogic->getFrameLegacy();
 		}
 
 		if (now >= m_nextBurstFrame) {
@@ -281,7 +295,7 @@ UpdateSleepTime StructureToppleUpdate::update()
 	// The building is now flat on the ground and done with all the crushing and all that.
 	if (m_toppleState == TOPPLESTATE_WAITINGFORDONE)
 	{
-		if (m_toppleFrame <= TheGameLogic->getFrame())
+		if (m_toppleFrame <= TheGameLogic->getFrameLegacy())
 		{
 			Object *building = getObject();
 			Drawable *drawable = building->getDrawable();
