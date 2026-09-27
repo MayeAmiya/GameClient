@@ -60,6 +60,7 @@
 #include "Common/GameEngine.h"
 #include "Common/GameLOD.h"
 #include "Common/GameState.h"
+#include "Common/FramePacer.h"
 #include "Common/MessageStream.h"
 #include "Common/MultiplayerSettings.h"
 #include "Common/Player.h"
@@ -927,6 +928,11 @@ void ChallengeLoadScreen::activatePiecesMinSpec(const GeneralPersona *generalPla
 
 void ChallengeLoadScreen::init( GameInfo *game )
 {
+	// TheSuperHackers @feature Challenge mode defaults to the 快速(60) logic pacing
+	// (a cap — the actual rate is min(cap, render fps); in-game it can be cycled 快速60/中速45/慢速30).
+	TheFramePacer->setLogicTimeScaleFps( 60 );
+	TheFramePacer->enableLogicTimeScale( TRUE );
+
 	const Campaign *campaign = TheCampaignManager->getCurrentCampaign();
 	const Mission *mission = TheCampaignManager->getCurrentMission();
 
